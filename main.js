@@ -60,38 +60,145 @@ const datosJuego = {
   sombreroPuesto: null,       // id del sombrero que trae puesto (o null)
   decoracionesPuestas: [],    // ids de las decoraciones en la pecera
   // --- Monedas que caen en la pecera ---
-  inicioEsperaMoneda: 0,      // en qué segundo del juego empezó la espera
+  segundosMoneda: 0,          // segundos que llevamos esperando la siguiente moneda
   saludosParaMoneda: 0,       // saludos dados durante esta espera (máximo 3)
   monedasEnPecera: 0,         // monedas que cayeron y aún no recoges
+  // --- Reloj ---
+  segundosMancha: 0,          // segundos desde la última mancha
+  ultimaVez: Date.now(),      // fecha y hora de la última vez que pusimos todo al día
 };
 
 // Si el ajolote se enferma, reiniciamos sus necesidades,
 // pero NO las monedas ni lo comprado (¡eso ya te lo ganaste!).
 function reiniciarNecesidades() {
   Object.assign(datosJuego, necesidadesIniciales);
+  datosJuego.segundosMancha = 0;
+  datosJuego.ultimaVez = Date.now();
+  guardarPartida();
 }
 
-// Reglas del juego (cámbialas para hacerlo más fácil o difícil)
-const BAJA_ALIMENTO_POR_SEGUNDO = 1.2;
-const BAJA_ANIMO_POR_SEGUNDO = 0.8;
-const SEGUNDOS_ENTRE_MANCHAS = 6;
+// ===== 2b. EL TIEMPO PASA AUNQUE NO ESTÉS =====
+// Como un tamagotchi de verdad: usamos el RELOJ REAL del dispositivo.
+// Las reglas están en horas reales (cámbialas para hacerlo más fácil o difícil).
+const HORAS_PARA_TENER_HAMBRE = 6;     // la comida baja de 100 a 0 en 6 horas
+const HORAS_PARA_ABURRIRSE = 8;        // el ánimo baja de 100 a 0 en 8 horas
+const MINUTOS_ENTRE_MANCHAS = 45;      // cada 45 minutos el agua se ensucia
 const MAXIMO_MANCHAS = 7;
+const HORAS_PARA_ENFERMARSE = 12;      // mal cuidado, pierde toda la salud en 12 horas
+const HORAS_PARA_CURARSE = 4;          // bien cuidado, recupera toda la salud en 4 horas
+const MAXIMO_MONEDAS_EN_PECERA = 5;    // no se juntan más monedas sin recoger
 
 // Tiempos de las monedas.
-// 💡 Para PROBAR rápido, cambia SEGUNDOS_POR_MINUTO a 1:
-// así "15 minutos" duran 15 segundos. Antes de entregar, regrésalo a 60.
-const SEGUNDOS_POR_MINUTO = 60;
 const MINUTOS_MONEDA_NORMAL = 15;
 const MINUTOS_MONEDA_RAPIDA = 5;
 const SALUDOS_PARA_ACELERAR = 3;
+
+// 💡 Para PROBAR rápido, cambia VELOCIDAD_DEL_TIEMPO a 60:
+// así 1 minuto real = 1 hora del juego. Antes de entregar, regrésalo a 1.
+const VELOCIDAD_DEL_TIEMPO = 1;
 
 // ¿Cuántos segundos hay que esperar para la siguiente moneda?
 function segundosDeEspera() {
   const minutos = datosJuego.saludosParaMoneda >= SALUDOS_PARA_ACELERAR
     ? MINUTOS_MONEDA_RAPIDA
     : MINUTOS_MONEDA_NORMAL;
-  return minutos * SEGUNDOS_POR_MINUTO;
+  return minutos * 60;
 }
+
+// Avanza el mundo del ajolote "segundos" hacia adelante.
+// Es la MISMA regla si estás mirando o si el dispositivo estuvo apagado.
+function simular(segundos) {
+  const horas = segundos / 3600;
+  datosJuego.alimentado = Math.max(0, datosJuego.alimentado - horas * 100 / HORAS_PARA_TENER_HAMBRE);
+  datosJuego.animo = Math.max(0, datosJuego.animo - horas * 100 / HORAS_PARA_ABURRIRSE);
+
+  // El agua se ensucia poco a poco
+  datosJuego.segundosMancha += segundos;
+  while (datosJuego.segundosMancha >= MINUTOS_ENTRE_MANCHAS * 60) {
+    datosJuego.segundosMancha -= MINUTOS_ENTRE_MANCHAS * 60;
+    datosJuego.manchas = Math.min(MAXIMO_MANCHAS, datosJuego.manchas + 1);
+  }
+
+  // Caen monedas
+  datosJuego.segundosMoneda += segundos;
+  while (datosJuego.segundosMoneda >= segundosDeEspera()) {
+    datosJuego.segundosMoneda -= segundosDeEspera();
+    datosJuego.saludosParaMoneda = 0;
+    datosJuego.monedasEnPecera = Math.min(MAXIMO_MONEDAS_EN_PECERA, datosJuego.monedasEnPecera + 1);
+  }
+
+  // Si está mal cuidado pierde salud; si está bien, se recupera
+  const limpieza = calcularLimpieza();
+  if (datosJuego.alimentado <= 0 || limpieza < 30) {
+    datosJuego.salud -= horas * 100 / HORAS_PARA_ENFERMARSE;
+  } else if (datosJuego.alimentado > 50 && limpieza > 60) {
+    datosJuego.salud += horas * 100 / HORAS_PARA_CURARSE;
+  }
+  datosJuego.salud = Math.max(0, Math.min(100, datosJuego.salud));
+}
+
+// Mira el reloj real y aplica todo el tiempo que pasó desde la última vez.
+// Si el dispositivo estuvo apagado 5 horas, aquí pasan esas 5 horas de golpe.
+// Devuelve cuántos segundos pasaron.
+function ponerAlDia() {
+  const ahora = Date.now();
+  let pendientes = (ahora - datosJuego.ultimaVez) / 1000 * VELOCIDAD_DEL_TIEMPO;
+  datosJuego.ultimaVez = ahora;
+  if (pendientes <= 0 || datosJuego.salud <= 0) return 0; // reloj atrasado o ya enfermo
+  const total = pendientes;
+  // Lo hacemos en pasitos de 1 minuto, para que el orden de las cosas sea correcto
+  // (por ejemplo: primero se acaba la comida, DESPUÉS empieza a perder salud).
+  while (pendientes > 0 && datosJuego.salud > 0) {
+    const paso = Math.min(60, pendientes);
+    simular(paso);
+    pendientes -= paso;
+  }
+  return total;
+}
+
+// --- Guardar y cargar la partida ---
+// localStorage es una "cajita" del navegador que NO se borra al cerrar el juego
+// ni al apagar el dispositivo. Guardamos datosJuego como texto (JSON).
+const CLAVE_GUARDADO = "axobiot-partida";
+
+function guardarPartida() {
+  try {
+    localStorage.setItem(CLAVE_GUARDADO, JSON.stringify(datosJuego));
+  } catch (error) {
+    // Si el navegador no deja guardar, el juego sigue funcionando igual
+  }
+}
+
+function cargarPartida() {
+  try {
+    const texto = localStorage.getItem(CLAVE_GUARDADO);
+    if (texto) Object.assign(datosJuego, JSON.parse(texto));
+  } catch (error) {
+    // Partida dañada o sin permiso: empezamos de nuevo
+  }
+}
+
+// Convierte segundos en texto: 12000 → "3 h 20 min"
+function formatoAusencia(segundos) {
+  const horas = Math.floor(segundos / 3600);
+  const minutos = Math.floor((segundos % 3600) / 60);
+  return (horas > 0 ? horas + " h " : "") + minutos + " min";
+}
+
+// Al abrir el juego: cargamos y aplicamos el tiempo que estuvimos fuera
+cargarPartida();
+const segundosFuera = ponerAlDia();
+guardarPartida();
+
+// Cada segundo ponemos todo al día y guardamos, en cualquier escena.
+// setInterval es un reloj del navegador, independiente de KAPLAY.
+setInterval(() => {
+  ponerAlDia();
+  guardarPartida();
+}, 1000);
+// Si apagan la pantalla o cierran el juego, guardamos justo antes
+document.addEventListener("visibilitychange", guardarPartida);
+window.addEventListener("pagehide", guardarPartida);
 
 // Convierte segundos en texto de reloj: 125 → "2:05"
 function formatoReloj(segundos) {
@@ -490,10 +597,8 @@ k.scene("inicio", () => {
   k.add([k.text("Click o ESPACIO para empezar", { size: 18 }), k.pos(240, 290), k.anchor("center")]);
 
   function empezar() {
-    // El reloj de la primera moneda empieza a contar ahora
-    datosJuego.inicioEsperaMoneda = k.time();
-    datosJuego.saludosParaMoneda = 0;
-    k.go("acuario");
+    // Si se enfermó mientras no estabas, vamos directo a la despedida
+    k.go(datosJuego.salud <= 0 ? "despedida" : "acuario");
   }
   k.onKeyPress("space", empezar);
   k.onMousePress(empezar);
@@ -622,7 +727,7 @@ k.scene("acuario", () => {
     bocado.destroy();
     bocadoActual = null;
     datosJuego.alimentado = Math.min(100, datosJuego.alimentado + 25);
-    ajolote.hp += 5; // en v4000 la vida se cambia así (no con heal())
+    datosJuego.salud = Math.min(100, datosJuego.salud + 5);
     mostrarMensaje("¡Ñam! Se comió " + bocado.nombre);
   });
 
@@ -701,15 +806,10 @@ k.scene("acuario", () => {
     k.add(crearMancha(x, y));
   }
   // Volvemos a poner las manchas que había antes de salir de la escena
+  // (o las que aparecieron mientras no estabas)
   for (let i = 0; i < datosJuego.manchas; i++) agregarMancha();
-
-  // Cada cierto tiempo el agua se ensucia un poco más
-  k.loop(SEGUNDOS_ENTRE_MANCHAS, () => {
-    if (datosJuego.manchas < MAXIMO_MANCHAS) {
-      datosJuego.manchas++;
-      agregarMancha();
-    }
-  });
+  // Las manchas nuevas las agrega ponerAlDia() en los datos;
+  // en "El paso del tiempo" (abajo) dibujamos las que falten.
 
   // LIMPIAR: click sobre una mancha, SOLO si el click fue dentro de la pecera
   k.onClick("mancha", (mancha) => {
@@ -757,19 +857,23 @@ k.scene("acuario", () => {
     datosJuego.monedasEnPecera--;
   });
 
-  // ¿Ya es hora de que caiga una moneda?
-  // k.time() es el reloj del juego: cuenta los segundos desde que empezó,
-  // aunque cambies de escena (por ejemplo, si vas a la tienda).
+  // ¿Cayó una moneda nueva? ponerAlDia() la cuenta en los datos;
+  // aquí solo la dibujamos cayendo desde arriba.
   function revisarMoneda() {
-    const transcurrido = k.time() - datosJuego.inicioEsperaMoneda;
-    if (transcurrido >= segundosDeEspera()) {
-      datosJuego.monedasEnPecera++;
+    if (k.get("moneda").length < datosJuego.monedasEnPecera) {
       soltarMoneda(k.rand(PECERA.izq + 30, PECERA.der - 30), PECERA.arriba + 10);
       mostrarMensaje("¡Cayó una moneda! Dale click.");
-      // Empieza una nueva espera desde cero
-      datosJuego.inicioEsperaMoneda = k.time();
-      datosJuego.saludosParaMoneda = 0;
     }
+  }
+
+  // Mismo truco para las manchas: si hay más en los datos que en la pecera, las dibujamos
+  function revisarManchas() {
+    if (k.get("mancha").length < datosJuego.manchas) agregarMancha();
+  }
+
+  // Si estuviste fuera un buen rato, te contamos cuánto
+  if (segundosFuera > 10 * 60) {
+    mostrarMensaje("Estuviste fuera " + formatoAusencia(segundosFuera));
   }
 
   // --- Botones (click/dedo) y teclas (para botones físicos) ---
@@ -806,7 +910,7 @@ k.scene("acuario", () => {
         k.drawSprite({ sprite: "moneda", pos: posIconoMoneda, scale: ESCALA_2 });
         k.drawText({ text: "x " + datosJuego.monedas, pos: posTextoMonedas, size: 13, color: COLOR_DORADO });
         // Cuenta regresiva para la siguiente moneda
-        const faltan = segundosDeEspera() - (k.time() - datosJuego.inicioEsperaMoneda);
+        const faltan = (segundosDeEspera() - datosJuego.segundosMoneda) / VELOCIDAD_DEL_TIEMPO;
         k.drawText({ text: "Próxima moneda: " + formatoReloj(faltan), pos: posTextoReloj, size: 13, color: COLOR_TEXTO });
         k.drawText({
           text: "Saludos: " + datosJuego.saludosParaMoneda + "/" + SALUDOS_PARA_ACELERAR,
@@ -819,19 +923,16 @@ k.scene("acuario", () => {
 
   // --- El paso del tiempo ---
   k.onUpdate(() => {
-    datosJuego.alimentado = Math.max(0, datosJuego.alimentado - BAJA_ALIMENTO_POR_SEGUNDO * k.dt());
-    datosJuego.animo = Math.max(0, datosJuego.animo - BAJA_ANIMO_POR_SEGUNDO * k.dt());
+    // El reloj real manda: ponerAlDia() baja la comida, el ánimo, etc.
+    ponerAlDia();
     tiempoFeliz = Math.max(0, tiempoFeliz - k.dt());
     revisarMoneda();
+    revisarManchas();
     const limpieza = calcularLimpieza();
 
-    // Si está mal cuidado pierde salud; si está bien, se recupera
-    if (datosJuego.alimentado <= 0 || limpieza < 30) {
-      ajolote.hp -= 4 * k.dt();
-    } else if (datosJuego.alimentado > 50 && limpieza > 60) {
-      ajolote.hp += 1 * k.dt();
-    }
-    datosJuego.salud = ajolote.hp;
+    // La vida del ajolote sigue a la salud guardada.
+    // Si llega a 0, el componente health() dispara onDeath().
+    ajolote.hp = datosJuego.salud;
 
     // Cambiamos la cara SOLO cuando cambia el ánimo (no en cada fotograma)
     let nuevoAnimo = "nadar";
