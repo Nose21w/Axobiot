@@ -138,7 +138,7 @@ const PALETA = {
   K: "#2b1d2b", // negro (ojos, boca, puerta)
   W: "#ffffff", // blanco (brillos)
   A: "#7fd4ff", // azul claro (lágrima, gema)
-  Z: "#e5383b", // rojo (manzana, gema, bandera)
+  Z: "#e5383b", // rojo (gusano de sangre, gema, bandera)
   Y: "#ffe66d", // amarillo
   G: "#52b788", // verde (hojas)
   M: "#7f4f24", // café oscuro
@@ -155,6 +155,9 @@ const PALETA = {
   N: "#222222", // negro sombrero
   X: "#8d99ae", // piedra
   J: "#5c677d", // piedra oscura
+  F: "#d98b8b", // lombriz
+  U: "#a0525a", // anillos de la lombriz
+  V: "#ff9a5c", // artemia (camarón pequeñito)
 };
 
 // Convierte el dibujo de letras en una imagen.
@@ -240,18 +243,34 @@ const ajoloteTriste = [
   "....P...P..R.R.R....",
 ];
 
-// --- Comida y suciedad ---
-const dibujoManzana = [
-  "....MG....",
-  "...ZZMZZ..",
-  "..ZZZZZZZ.",
-  ".ZWZZZZZZZ",
-  ".ZWZZZZZZZ",
-  ".ZZZZZZZZZ",
-  ".ZZZZZZZZZ",
-  "..ZZZZZZZ.",
-  "...ZZ.ZZ..",
+// --- Comida ---
+// Los ajolotes son CARNÍVOROS: no comen fruta.
+// Se tragan entera su comida porque sus dientes no sirven para masticar.
+// Lombriz de tierra: la mejor comida para un ajolote.
+const dibujoLombriz = [
+  "..FFUF.......",
+  ".FFFFFF......",
+  "FF....FF...FF",
+  "F......FUFFFF",
+  "........FFF..",
 ];
+// Gusano de sangre: una larva roja de mosquito.
+const dibujoGusanoSangre = [
+  "ZZ...........",
+  ".TZZ.....ZZ..",
+  "...ZZT.TZZ.ZZ",
+  ".....ZZZ.....",
+];
+// Artemia: un camarón chiquitito de agua salada.
+const dibujoArtemia = [
+  "....VV...",
+  "K.VVVVV..",
+  ".VVVWVVVV",
+  "..VVVVV.V",
+  "...V.V.V.",
+];
+
+// --- Suciedad ---
 const dibujoMancha = [
   "..DDD...",
   ".DEEDD..",
@@ -355,7 +374,8 @@ k.loadSprite("ajolote",
   },
 );
 const dibujosSimples = {
-  manzana: dibujoManzana, mancha: dibujoMancha,
+  lombriz: dibujoLombriz, gusanoSangre: dibujoGusanoSangre, artemia: dibujoArtemia,
+  mancha: dibujoMancha,
   corazon: dibujoCorazon, moneda: dibujoMoneda,
   fiesta: dibujoFiesta, copa: dibujoCopa, corona: dibujoCorona,
   tronco: dibujoTronco, cofre: dibujoCofre, castillo: dibujoCastillo,
@@ -389,15 +409,23 @@ const crearMancha = (x, y) => [
   "mancha",
 ];
 
-const crearBocado = (x) => [
-  k.sprite("manzana"),
+// Las comidas que le podemos dar (la que cae se elige al azar)
+const COMIDAS = [
+  { sprite: "lombriz", nombre: "una lombriz" },
+  { sprite: "gusanoSangre", nombre: "un gusano de sangre" },
+  { sprite: "artemia", nombre: "una artemia" },
+];
+
+const crearBocado = (x, comida) => [
+  k.sprite(comida.sprite),
   k.pos(x, PECERA.arriba + 10),
   k.anchor("center"),
-  k.scale(1.5),
+  k.scale(2.5),
   // isSensor: true = "avísame cuando toque algo".
   // En v4000, sin esto (o sin body()) NO se detectan colisiones.
   k.area({ isSensor: true }),
   "bocado",
+  { nombre: comida.nombre }, // para decir qué se comió
 ];
 
 // Pared invisible: el ajolote "rebota" al tocarla
@@ -595,7 +623,7 @@ k.scene("acuario", () => {
     bocadoActual = null;
     datosJuego.alimentado = Math.min(100, datosJuego.alimentado + 25);
     ajolote.hp += 5; // en v4000 la vida se cambia así (no con heal())
-    mostrarMensaje("¡Ñam ñam!");
+    mostrarMensaje("¡Ñam! Se comió " + bocado.nombre);
   });
 
   // Si la vida llega a 0, termina el juego
@@ -698,7 +726,8 @@ k.scene("acuario", () => {
       mostrarMensaje("¡Ya está lleno!");
       return;
     }
-    const bocado = k.add(crearBocado(k.rand(PECERA.izq + 40, PECERA.der - 40)));
+    // k.choose() escoge un elemento al azar de una lista
+    const bocado = k.add(crearBocado(k.rand(PECERA.izq + 40, PECERA.der - 40), k.choose(COMIDAS)));
     // El bocado se hunde despacio hasta la arena
     bocado.onUpdate(() => {
       if (bocado.pos.y < ARENA_Y - 8) bocado.move(0, 40);
