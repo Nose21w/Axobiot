@@ -381,10 +381,10 @@ $("#tabla").innerHTML = Object.entries(CATS).map(([c, t]) =>
 
 // videos
 const VIDEOS = [
-  { src:"video/v1", nombre:"Árbol encantado con hongos" },
-  { src:"video/v2", nombre:"Montaña con calavera" },
+  { src:"video/v1", nombre:"Árbol encantado con hongos", precio:150 },
+  { src:"video/v2", nombre:"Montaña con calavera", precio:150 },
   { src:"video/v3", nombre:"Barca de la muerte con calaveras" },
-  { src:"video/v4", nombre:"Dragón sobre calavera" },
+  { src:"video/v4", nombre:"Dragón sobre calavera", precio:150 },
   { src:"video/v5", nombre:"Barca de esqueletos" }
 ];
 $("#vgrid").innerHTML = VIDEOS.map(v => `
@@ -393,8 +393,9 @@ $("#vgrid").innerHTML = VIDEOS.map(v => `
     <div class="body">
       <span class="tag">Quemador de reflujo</span>
       <h3>${esc(v.nombre)}</h3>
-      <a class="btn btn-wa" data-wa="Hola, me interesa el quemador de reflujo: ${esc(v.nombre)}. ¿Qué precio tiene?" href="#">
-        <svg viewBox="0 0 24 24" fill="currentColor"><use href="#i-wa"/></svg>Pregunta el precio</a>
+      ${v.precio ? `<div class="price"><strong>$${v.precio}</strong><small>MXN · mayoreo</small></div>` : `<div class="price"><strong class="ask">Pregunta el precio</strong></div>`}
+      <a class="btn btn-wa" data-wa="Hola, me interesa el quemador de reflujo: ${esc(v.nombre)}${v.precio ? ` ($${v.precio} mayoreo). ¿Tienen disponible?` : `. ¿Qué precio tiene?`}" href="#">
+        <svg viewBox="0 0 24 24" fill="currentColor"><use href="#i-wa"/></svg>${v.precio ? "Pedir este producto" : "Pregunta el precio"}</a>
     </div>
   </article>`).join("");
 
