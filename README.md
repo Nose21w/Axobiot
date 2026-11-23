@@ -6,6 +6,24 @@ Tamagotchi de ajolote hecho con [KAPLAY](https://kaplayjs.com) v4000.
 
 Abre `index.html` en el navegador (o sírvelo con `npx serve .`).
 
+## En el celular
+
+El juego funciona con el dedo, se juega en horizontal y se puede instalar como app.
+
+1. Súbelo a internet con **GitHub Pages**: en el repositorio ve a
+   *Settings → Pages → Build and deployment*, elige *Deploy from a branch*,
+   selecciona la rama y la carpeta `/ (root)` y guarda. En unos minutos te da un link.
+2. Abre el link en el celular.
+3. Instálalo:
+   - **Android (Chrome):** menú ⋮ → *Instalar app* o *Agregar a pantalla principal*.
+   - **iPhone (Safari):** botón compartir → *Agregar a inicio*.
+
+Una vez abierto, funciona sin internet. Si cambias el juego, sube el número de
+`VERSION` en `sw.js` para que los celulares descarguen la versión nueva.
+
+En Android se bloquea en horizontal; en iPhone (que no lo permite) sale un aviso
+para girar el celular.
+
 - **Toca el agua**: el ajolote nada hacia ahí.
 - **Burbuja**: el ajolote te muestra lo que necesita (comida, limpieza o cariño).
 - **1 / Comer**: suelta comida de ajolote: lombriz, gusano de sangre o artemia.

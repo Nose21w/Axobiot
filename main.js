@@ -616,7 +616,7 @@ function crearBoton(texto, x, y, ancho, accion) {
 k.scene("inicio", () => {
   k.add([k.text("AXOBIOT", { size: 48 }), k.pos(240, 90), k.anchor("center"), k.color(255, 173, 198)]);
   k.add([k.sprite("ajolote", { anim: "nadar" }), k.pos(240, 190), k.anchor("center"), k.scale(5)]);
-  k.add([k.text("Click o ESPACIO para empezar", { size: 18 }), k.pos(240, 290), k.anchor("center")]);
+  k.add([k.text("Toca o presiona ESPACIO para empezar", { size: 18 }), k.pos(240, 290), k.anchor("center")]);
 
   function empezar() {
     // Si se enfermó mientras no estabas, vamos directo a la despedida
@@ -1296,7 +1296,7 @@ k.scene("despedida", () => {
     k.pos(240, 230),
     k.anchor("center"),
   ]);
-  k.add([k.text("Click o ESPACIO para intentarlo de nuevo", { size: 16 }), k.pos(240, 300), k.anchor("center")]);
+  k.add([k.text("Toca o presiona ESPACIO para intentarlo de nuevo", { size: 16 }), k.pos(240, 300), k.anchor("center")]);
 
   function reiniciar() {
     reiniciarNecesidades();

@@ -2,17 +2,105 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- user-scalable=no: que el celular no haga zoom al tocar rápido -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Axobiot</title>
+  <meta name="description" content="Cuida a tu ajolote virtual">
+  <meta name="theme-color" content="#181f30">
+
+  <!-- Para instalarlo como app (Android y iPhone) -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="iconos/icono-192.png">
+  <link rel="apple-touch-icon" href="iconos/icono-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Axobiot">
+
   <style>
-    html, body { margin: 0; height: 100%; background: #181f30; overflow: hidden; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #181f30;
+      overflow: hidden;
+      /* Que la pantalla no se mueva, no haga zoom ni recargue al deslizar */
+      touch-action: none;
+      overscroll-behavior: none;
+      /* Que no se seleccione texto ni salga el menú al dejar el dedo presionado */
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
     canvas { display: block; }
+
+    /* Aviso de "gira tu celular": solo en pantallas táctiles en vertical */
+    #girar {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: #181f30;
+      color: #ffadc6;
+      font: bold 22px system-ui, sans-serif;
+      text-align: center;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 16px;
+    }
+    #girar .celular {
+      width: 60px;
+      height: 100px;
+      border: 6px solid #ffadc6;
+      border-radius: 12px;
+      animation: girar 2s ease-in-out infinite;
+    }
+    @keyframes girar {
+      0%, 20% { transform: rotate(0deg); }
+      60%, 100% { transform: rotate(-90deg); }
+    }
+    @media (orientation: portrait) and (pointer: coarse) {
+      #girar { display: flex; }
+    }
   </style>
 </head>
 <body>
-  <!-- Motor del juego: KAPLAY v4000 -->
-  <script src="https://unpkg.com/kaplay@4000.0.0-alpha.27.1/dist/kaplay.js"></script>
+  <div id="girar">
+    <div class="celular"></div>
+    <div>Gira tu celular<br>para cuidar a tu ajolote</div>
+  </div>
+
+  <!-- Motor del juego: KAPLAY v4000 (copia local, funciona sin internet) -->
+  <script src="lib/kaplay.js"></script>
   <!-- Nuestro juego -->
   <script src="main.js"></script>
+
+  <script>
+    // ===== MODO CELULAR =====
+    const esCelular = window.matchMedia("(pointer: coarse)").matches;
+
+    // Al primer toque: pantalla completa y forzar horizontal.
+    // (Los navegadores solo dejan hacerlo después de que el usuario toca algo.)
+    function pantallaCompletaHorizontal() {
+      const pagina = document.documentElement;
+      const pedir = pagina.requestFullscreen || pagina.webkitRequestFullscreen;
+      if (!pedir || document.fullscreenElement) return;
+      Promise.resolve(pedir.call(pagina))
+        .then(() => screen.orientation && screen.orientation.lock("landscape"))
+        .catch(() => {
+          // iPhone no deja bloquear la orientación: ahí sale el aviso de "Gira tu celular"
+        });
+    }
+    if (esCelular) {
+      document.addEventListener("pointerdown", pantallaCompletaHorizontal);
+    }
+
+    // Guardar el juego en el celular para usarlo sin internet
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
 </body>
 </html>
