@@ -66,6 +66,16 @@ const datosJuego = {
   // --- Reloj ---
   segundosMancha: 0,          // segundos desde la última mancha
   ultimaVez: Date.now(),      // fecha y hora de la última vez que pusimos todo al día
+  // --- Días y logros ---
+  segundosVivo: 0,            // cuánto tiempo lleva vivo este ajolote
+  recordDias: 1,              // el ajolote que más días ha vivido
+  logros: [],                 // ids de los logros que ya ganaste
+  comidasDadas: 0,            // cuántas veces ha comido (en total)
+  comidasProbadas: [],        // qué tipos de comida ha probado
+  saludosTotales: 0,
+  monedasRecogidas: 0,
+  mejorMinijuego: 0,          // récord de bocados en el minijuego
+  minijuegoPerfecto: false,   // ¿terminó el minijuego sin tocar basura?
 };
 
 // Si el ajolote se enferma, reiniciamos sus necesidades,
@@ -73,6 +83,7 @@ const datosJuego = {
 function reiniciarNecesidades() {
   Object.assign(datosJuego, necesidadesIniciales);
   datosJuego.segundosMancha = 0;
+  datosJuego.segundosVivo = 0; // un ajolote nuevo empieza en el día 1
   datosJuego.ultimaVez = Date.now();
   guardarPartida();
 }
@@ -117,6 +128,7 @@ function segundosDeEspera() {
 // Es la MISMA regla si estás mirando o si el dispositivo estuvo apagado.
 function simular(segundos) {
   const horas = segundos / 3600;
+  datosJuego.segundosVivo += segundos;
   datosJuego.alimentado = Math.max(0, datosJuego.alimentado - horas * 100 / HORAS_PARA_TENER_HAMBRE);
   datosJuego.animo = Math.max(0, datosJuego.animo - horas * 100 / HORAS_PARA_ABURRIRSE);
 
@@ -186,6 +198,11 @@ function cargarPartida() {
   }
 }
 
+// ¿En qué día de vida va el ajolote? (empieza en el día 1)
+function diasVivo() {
+  return Math.floor(datosJuego.segundosVivo / 86400) + 1;
+}
+
 // Convierte segundos en texto: 12000 → "3 h 20 min"
 function formatoAusencia(segundos) {
   const horas = Math.floor(segundos / 3600);
@@ -202,6 +219,7 @@ guardarPartida();
 // setInterval es un reloj del navegador, independiente de KAPLAY.
 setInterval(() => {
   ponerAlDia();
+  revisarLogros();
   guardarPartida();
 }, 1000);
 // Si apagan la pantalla o cierran el juego, guardamos justo antes
@@ -459,6 +477,25 @@ const dibujoBasura = [
   ".SSSSS.",
 ];
 
+// --- Migajas (partículas al comer) ---
+// Es blanca para poder pintarla del color de cada comida.
+const dibujoMiga = [
+  "WW",
+  "WW",
+];
+
+// --- Trofeo (logros) ---
+const dibujoTrofeo = [
+  "OOOOOOOOO",
+  "QOOWOOOOQ",
+  "Q.OWOOO.Q",
+  ".QOOOOOQ.",
+  "...OOO...",
+  "....O....",
+  "...OOO...",
+  "..QQQQQ..",
+];
+
 // --- Decoraciones de la pecera ---
 const dibujoTronco = [
   "......G.........",
@@ -504,7 +541,7 @@ k.loadSprite("ajolote",
 );
 const dibujosSimples = {
   lombriz: dibujoLombriz, gusanoSangre: dibujoGusanoSangre, artemia: dibujoArtemia,
-  mancha: dibujoMancha, basura: dibujoBasura,
+  mancha: dibujoMancha, basura: dibujoBasura, miga: dibujoMiga, trofeo: dibujoTrofeo,
   corazon: dibujoCorazon, moneda: dibujoMoneda,
   fiesta: dibujoFiesta, copa: dibujoCopa, corona: dibujoCorona,
   tronco: dibujoTronco, cofre: dibujoCofre, castillo: dibujoCastillo,
@@ -512,6 +549,22 @@ const dibujosSimples = {
 for (const nombre in dibujosSimples) {
   k.loadSprite(nombre, crearImagenPixel([dibujosSimples[nombre]]));
 }
+
+// ===== 5b. SONIDOS =====
+// El sonido de comer dura 1.5 segundos y tiene 7 mordidas.
+k.loadSound("comer", "sonidos/comer.mp3");
+// En qué segundo suena cada mordida y qué tan fuerte (0 a 1).
+// Los medimos del audio: así la animación va al RITMO del sonido.
+const MORDIDAS = [
+  { tiempo: 0.13, fuerza: 0.75 },
+  { tiempo: 0.33, fuerza: 0.77 },
+  { tiempo: 0.50, fuerza: 0.52 },
+  { tiempo: 0.73, fuerza: 0.38 },
+  { tiempo: 0.93, fuerza: 0.37 },
+  { tiempo: 1.12, fuerza: 0.53 },
+  { tiempo: 1.34, fuerza: 0.80 },
+];
+const DURACION_COMER = 1.5; // lo mismo que dura el audio
 
 // Colores y tamaños que usamos seguido (se crean una sola vez)
 // ⚡ OPTIMIZACIÓN: crear colores y vectores una vez y reutilizarlos
@@ -539,10 +592,11 @@ const crearMancha = (x, y) => [
 ];
 
 // Las comidas que le podemos dar (la que cae se elige al azar)
+// "colores" son los colores de sus migajas (los mismos del dibujo).
 const COMIDAS = [
-  { sprite: "lombriz", nombre: "una lombriz" },
-  { sprite: "gusanoSangre", nombre: "un gusano de sangre" },
-  { sprite: "artemia", nombre: "una artemia" },
+  { sprite: "lombriz", nombre: "una lombriz", colores: [PALETA.F, PALETA.U] },
+  { sprite: "gusanoSangre", nombre: "un gusano de sangre", colores: [PALETA.Z, PALETA.T] },
+  { sprite: "artemia", nombre: "una artemia", colores: [PALETA.V, PALETA.V] },
 ];
 
 const crearBocado = (x, comida) => [
@@ -553,8 +607,14 @@ const crearBocado = (x, comida) => [
   // isSensor: true = "avísame cuando toque algo".
   // En v4000, sin esto (o sin body()) NO se detectan colisiones.
   k.area({ isSensor: true }),
+  k.z(5),           // enfrente del ajolote: se ve cómo se la mete a la boca
   "bocado",
-  { nombre: comida.nombre }, // para decir qué se comió
+  {
+    nombre: comida.nombre,   // para decir qué se comió
+    tipo: comida.sprite,     // para el logro "Dieta variada"
+    colores: comida.colores.map((hex) => k.rgb(hex)), // para las migajas
+    comiendo: false,         // ¿ya se la está comiendo?
+  },
 ];
 
 // Pared invisible: el ajolote "rebota" al tocarla
@@ -608,6 +668,79 @@ function crearBoton(texto, x, y, ancho, accion) {
   ]);
   boton.onClick(accion);
   return boton;
+}
+
+// ===== 6b. LOGROS =====
+// Cada logro es una "ficha" con una pregunta: cumple() dice si ya lo ganaste.
+// Para agregar uno nuevo, solo agrega otra ficha a la lista.
+// Cada logro te regala 1 moneda.
+const LOGROS = [
+  { id: "primeraComida", nombre: "¡Ñam!", descripcion: "Dale de comer por primera vez",
+    cumple: () => datosJuego.comidasDadas >= 1 },
+  { id: "dietaVariada", nombre: "Dieta variada", descripcion: "Que pruebe las 3 comidas",
+    cumple: () => datosJuego.comidasProbadas.length >= COMIDAS.length },
+  { id: "buenDiente", nombre: "Buen diente", descripcion: "Dale de comer 25 veces",
+    cumple: () => datosJuego.comidasDadas >= 25 },
+  { id: "aguaCristalina", nombre: "Agua cristalina", descripcion: "Deja la pecera sin manchas",
+    cumple: () => datosJuego.manchas === 0 },
+  { id: "amigos", nombre: "Mejores amigos", descripcion: "Salúdalo 20 veces",
+    cumple: () => datosJuego.saludosTotales >= 20 },
+  { id: "primeraMoneda", nombre: "Ahorrador", descripcion: "Recoge una moneda de la pecera",
+    cumple: () => datosJuego.monedasRecogidas >= 1 },
+  { id: "elegante", nombre: "¡Qué elegante!", descripcion: "Ponle un sombrero",
+    cumple: () => datosJuego.sombreroPuesto !== null },
+  { id: "decorador", nombre: "Decorador", descripcion: "Pon 3 decoraciones",
+    cumple: () => datosJuego.decoracionesPuestas.length >= 3 },
+  { id: "cazador", nombre: "Cazador", descripcion: "Atrapa 20 bocados en el minijuego",
+    cumple: () => datosJuego.mejorMinijuego >= 20 },
+  { id: "ceroBasura", nombre: "Cero basura", descripcion: "Minijuego sin tocar basura",
+    cumple: () => datosJuego.minijuegoPerfecto },
+  { id: "dia3", nombre: "3 días juntos", descripcion: "Cuídalo hasta el día 3",
+    cumple: () => diasVivo() >= 3 },
+  { id: "dia7", nombre: "Una semana", descripcion: "Cuídalo hasta el día 7",
+    cumple: () => diasVivo() >= 7 },
+  { id: "dia30", nombre: "Un mes", descripcion: "Cuídalo hasta el día 30",
+    cumple: () => diasVivo() >= 30 },
+];
+
+// Revisa todos los logros y gana los que ya se cumplieron
+function revisarLogros() {
+  datosJuego.recordDias = Math.max(datosJuego.recordDias, diasVivo());
+  if (datosJuego.salud <= 0) return; // no se ganan logros con el ajolote enfermo
+  for (const logro of LOGROS) {
+    if (!datosJuego.logros.includes(logro.id) && logro.cumple()) {
+      datosJuego.logros.push(logro.id);
+      datosJuego.monedas++;
+      guardarPartida();
+      mostrarAvisoLogro(logro);
+    }
+  }
+}
+
+// Letrero que baja desde arriba: "🏆 ¡Logro! ..."
+// Si salen varios juntos, se acomodan uno debajo del otro.
+function mostrarAvisoLogro(logro) {
+  const lugar = k.get("avisoLogro").length;
+  const aviso = k.add([
+    k.rect(300, 42, { radius: 8 }),
+    k.pos(240, -30),
+    k.anchor("center"),
+    k.color(60, 45, 20),
+    k.outline(3, COLOR_DORADO),
+    k.opacity(1),
+    k.lifespan(3, { fade: 0.5 }),
+    k.timer(),
+    "avisoLogro",
+  ]);
+  aviso.add([k.sprite("trofeo"), k.pos(-128, 0), k.anchor("center"), k.scale(3), k.opacity(1)]);
+  aviso.add([k.text("¡Logro! " + logro.nombre, { size: 14 }), k.pos(-105, -9), k.anchor("left"), k.color(COLOR_DORADO), k.opacity(1)]);
+  aviso.add([k.text(logro.descripcion + "  +1 moneda", { size: 10 }), k.pos(-105, 9), k.anchor("left"), k.opacity(1)]);
+  // Los hijos no se desvanecen solos: copian la transparencia del letrero
+  aviso.onUpdate(() => {
+    for (const hijo of aviso.children) hijo.opacity = aviso.opacity;
+  });
+  // Baja con un rebote
+  aviso.tween(-30, 95 + lugar * 48, 0.5, (y) => { aviso.pos = k.vec2(240, y); }, k.easings.easeOutBack);
 }
 
 // ===== 7. ESCENA DE INICIO =====
@@ -718,8 +851,12 @@ k.scene("acuario", () => {
   // onUpdate se ejecuta en cada fotograma (unas 60 veces por segundo).
   let destino = null;         // lugar del agua que tocaste (o null)
 
+  let comiendo = false;       // ¿se está comiendo algo ahorita?
+
   ajolote.onUpdate(() => {
-    if (bocadoActual) {
+    if (comiendo) {
+      // Mientras come se queda quieto, masticando
+    } else if (bocadoActual) {
       // Si hay comida, nada directo hacia ella
       ajolote.moveTo(bocadoActual.pos, VELOCIDAD_PERSEGUIR);
       ajolote.flipX = bocadoActual.pos.x < ajolote.pos.x;
@@ -755,14 +892,92 @@ k.scene("acuario", () => {
     direccion = pared.lado === "izquierda" ? 1 : -1;
   });
 
-  // COLISIÓN 2: el ajolote toca el bocado → se lo come
+  // COLISIÓN 2: el ajolote toca el bocado → se lo come poco a poco
   ajolote.onCollide("bocado", (bocado) => {
+    if (comiendo || bocado.comiendo) return;
+    empezarAComer(bocado);
+  });
+
+  // --- ANIMACIÓN DE COMER ---
+  // Dura lo mismo que el sonido (1.5 s). En cada mordida del audio:
+  // la comida se hace más chica, el ajolote se apachurra y salen migajas.
+  const cuadroMiga = k.getSprite("miga").data.frames[0];
+
+  function empezarAComer(bocado) {
+    comiendo = true;
+    destino = null;
+    bocado.comiendo = true; // deja de hundirse
+
+    // La comida se queda pegada a la boca del ajolote.
+    // Con anchor "left" (o "right") se hace chica HACIA la boca,
+    // como si se la fuera metiendo.
+    const lado = ajolote.flipX ? -1 : 1;
+    const boca = ajolote.pos.add(lado * 22, 4);
+    bocado.anchor = lado > 0 ? "left" : "right";
+    bocado.pos = boca;
+    const tamanoInicial = bocado.scale.x;
+
+    // Las migajas: SOLO son de adorno (no hacen nada en el juego).
+    // Viven 1.5 s, se van haciendo transparentes y se hunden despacito.
+    const migajas = k.add([
+      k.pos(boca),
+      k.particles({
+        max: 60,
+        lifeTime: [1.5, 1.5],
+        speed: [25, 70],
+        acceleration: [k.vec2(0, 15), k.vec2(0, 35)], // se hunden
+        damping: [1.5, 3],                            // el agua las frena
+        scales: [1.5, 1],
+        colors: bocado.colores,                       // del color de la comida
+        opacities: [1, 0],                            // se disuelven
+        texture: cuadroMiga.tex,
+        quads: [cuadroMiga.q],
+      }, {
+        direction: lado > 0 ? 0 : 180, // salen hacia donde mira
+        spread: 110,
+      }),
+      k.z(6),
+    ]);
+
+    k.play("comer");
+
+    // Programamos cada mordida en el segundo exacto en que suena
+    MORDIDAS.forEach((mordida, numero) => {
+      ajolote.wait(mordida.tiempo, () => {
+        // Cuánto queda de comida: después de la última mordida, nada
+        const queda = 1 - (numero + 1) / MORDIDAS.length;
+        ajolote.tween(bocado.scale, k.vec2(tamanoInicial * queda), 0.08, (escala) => {
+          if (bocado.exists()) bocado.scale = escala;
+        });
+        // Más migajas y más apachurrón en las mordidas fuertes
+        migajas.emit(Math.round(3 + mordida.fuerza * 7));
+        const apachurron = 0.3 * mordida.fuerza;
+        ajolote.tween(k.vec2(3 + apachurron, 3 - apachurron), ESCALA_3, 0.16, (escala) => {
+          ajolote.scale = escala;
+        }, k.easings.easeOutQuad);
+        // Abre y cierra la boca
+        ajolote.play("feliz");
+        ajolote.wait(0.09, () => { if (comiendo) ajolote.play("nadar"); });
+      });
+    });
+
+    ajolote.wait(DURACION_COMER, () => terminarDeComer(bocado));
+    // Borramos el emisor cuando ya se disolvieron las últimas migajas
+    ajolote.wait(DURACION_COMER + 1.6, () => migajas.destroy());
+  }
+
+  function terminarDeComer(bocado) {
     bocado.destroy();
     bocadoActual = null;
+    comiendo = false;
+    estadoAnimo = ""; // para que vuelva a elegir su cara
     datosJuego.alimentado = Math.min(100, datosJuego.alimentado + 25);
     datosJuego.salud = Math.min(100, datosJuego.salud + 5);
+    datosJuego.comidasDadas++;
+    if (!datosJuego.comidasProbadas.includes(bocado.tipo)) datosJuego.comidasProbadas.push(bocado.tipo);
     mostrarMensaje("¡Ñam! Se comió " + bocado.nombre);
-  });
+    revisarLogros();
+  }
 
   // Si la vida llega a 0, termina el juego
   ajolote.onDeath(() => {
@@ -799,6 +1014,7 @@ k.scene("acuario", () => {
   function saludarAjolote() {
     if (tiempoFeliz > 1) return; // pequeña espera para no repetir sin parar
     tiempoFeliz = 1.8;
+    datosJuego.saludosTotales++;
     datosJuego.animo = Math.min(100, datosJuego.animo + 12);
 
     // Cada saludo cuenta para que la moneda llegue antes
@@ -849,6 +1065,7 @@ k.scene("acuario", () => {
     if (!estaEnPecera(k.mousePos())) return;
     mancha.destroy();
     datosJuego.manchas = Math.max(0, datosJuego.manchas - 1);
+    revisarLogros();
   });
 
   // --- Alimentar ---
@@ -863,6 +1080,7 @@ k.scene("acuario", () => {
     const bocado = k.add(crearBocado(k.rand(PECERA.izq + 40, PECERA.der - 40), k.choose(COMIDAS)));
     // El bocado se hunde despacio hasta la arena
     bocado.onUpdate(() => {
+      if (bocado.comiendo) return; // ya está en la boca del ajolote
       if (bocado.pos.y < ARENA_Y - 8) bocado.move(0, 40);
     });
     bocadoActual = bocado;
@@ -888,6 +1106,8 @@ k.scene("acuario", () => {
     moneda.destroy();
     datosJuego.monedas++;
     datosJuego.monedasEnPecera--;
+    datosJuego.monedasRecogidas++;
+    revisarLogros();
   });
 
   // ¿Cayó una moneda nueva? ponerAlDia() la cuenta en los datos;
@@ -914,7 +1134,7 @@ k.scene("acuario", () => {
     const punto = k.mousePos();
     if (!estaEnPecera(punto)) return;
     // Si tocaste una mancha, una moneda o al ajolote, eso tiene su propia acción
-    const tocoAlgo = ["mancha", "moneda", "ajolote"]
+    const tocoAlgo = ["mancha", "moneda", "ajolote", "botonLogros"]
       .some((tag) => k.get(tag).some((cosa) => cosa.isHovering()));
     if (tocoAlgo) return;
     // k.clamp() mantiene un número dentro de un rango (para que no se salga del agua)
@@ -977,6 +1197,19 @@ k.scene("acuario", () => {
   k.onKeyPress("3", () => k.go("tienda"));
   k.onKeyPress("4", irAJugar);
 
+  // Botón de logros: un trofeo en la esquina de la pecera (o tecla 5)
+  const botonLogros = k.add([
+    k.sprite("trofeo"),
+    k.pos(PECERA.der - 22, PECERA.arriba + 20),
+    k.anchor("center"),
+    k.scale(2.5),
+    k.area(),
+    k.z(70),
+    "botonLogros",
+  ]);
+  botonLogros.onClick(() => k.go("logros"));
+  k.onKeyPress("5", () => k.go("logros"));
+
   // Jugar da hambre: si tiene mucha hambre, primero que coma
   function irAJugar() {
     if (datosJuego.alimentado < COMIDA_PARA_JUGAR) {
@@ -998,7 +1231,8 @@ k.scene("acuario", () => {
   const posIconoMoneda = k.vec2(14, 38);
   const posTextoMonedas = k.vec2(34, 41);
   const posTextoReloj = k.vec2(100, 41);
-  const posTextoSaludos = k.vec2(300, 41);
+  const posTextoSaludos = k.vec2(290, 41);
+  const posTextoDia = k.vec2(405, 41);
 
   k.add([
     k.z(100), // z alto = se dibuja encima de todo
@@ -1019,6 +1253,8 @@ k.scene("acuario", () => {
           pos: posTextoSaludos, size: 13,
           color: datosJuego.saludosParaMoneda >= SALUDOS_PARA_ACELERAR ? COLOR_DORADO : COLOR_TEXTO,
         });
+        // Contador de días
+        k.drawText({ text: "Día " + diasVivo(), pos: posTextoDia, size: 13, color: COLOR_DORADO });
       },
     },
   ]);
@@ -1036,6 +1272,8 @@ k.scene("acuario", () => {
     // Si llega a 0, el componente health() dispara onDeath().
     ajolote.hp = datosJuego.salud;
 
+    // Mientras come, la animación de comer controla la cara
+    if (comiendo) return;
     // Cambiamos la cara SOLO cuando cambia el ánimo (no en cada fotograma)
     let nuevoAnimo = "nadar";
     if (tiempoFeliz > 0) nuevoAnimo = "feliz";
@@ -1181,9 +1419,14 @@ k.scene("jugar", () => {
 
     const monedasGanadas = Math.floor(puntos / PUNTOS_POR_MONEDA);
     datosJuego.monedas += monedasGanadas;
+    datosJuego.mejorMinijuego = Math.max(datosJuego.mejorMinijuego, puntos);
+    // Perfecto = se acabó el tiempo sin tocar nada de basura
+    if (vidas === VIDAS_MINIJUEGO) datosJuego.minijuegoPerfecto = true;
     datosJuego.animo = Math.min(100, datosJuego.animo + ANIMO_POR_JUGAR);
     datosJuego.alimentado = Math.max(0, datosJuego.alimentado - COMIDA_QUE_GASTA_JUGAR);
     guardarPartida();
+
+    revisarLogros();
 
     const panel = k.add([
       k.rect(320, 190, { radius: 12 }),
@@ -1202,6 +1445,44 @@ k.scene("jugar", () => {
   }
 
   // Salir: si sales antes de terminar, no hay premio
+  k.onKeyPress("0", () => k.go("acuario"));
+  k.onKeyPress("escape", () => k.go("acuario"));
+});
+
+// ===== 8c. ESCENA DE LOGROS =====
+k.scene("logros", () => {
+  const ganados = datosJuego.logros.length;
+  k.add([k.text("LOGROS", { size: 26 }), k.pos(240, 20), k.anchor("center"), k.color(COLOR_DORADO)]);
+  k.add([
+    k.text(ganados + " de " + LOGROS.length + "   ·   Día " + diasVivo() + "   ·   Récord: " + datosJuego.recordDias + " días", { size: 13 }),
+    k.pos(240, 44),
+    k.anchor("center"),
+  ]);
+
+  // Tarjetas en 2 columnas. Los que no has ganado se ven grises.
+  LOGROS.forEach((logro, numero) => {
+    const ganado = datosJuego.logros.includes(logro.id);
+    const columna = numero % 2;
+    const fila = Math.floor(numero / 2);
+    const tarjeta = k.add([
+      k.rect(226, 32, { radius: 6 }),
+      k.pos(10 + columna * 234, 60 + fila * 36),
+      k.color(ganado ? k.rgb(60, 45, 20) : k.rgb(40, 48, 66)),
+      k.outline(2, ganado ? COLOR_DORADO : k.rgb(70, 80, 100)),
+    ]);
+    tarjeta.add([
+      k.sprite("trofeo"),
+      k.pos(16, 16),
+      k.anchor("center"),
+      k.scale(2),
+      // color() multiplica el dibujo: gris oscuro = trofeo "apagado"
+      k.color(ganado ? k.rgb(255, 255, 255) : k.rgb(70, 70, 80)),
+    ]);
+    tarjeta.add([k.text(logro.nombre, { size: 12 }), k.pos(34, 4), k.color(ganado ? COLOR_DORADO : k.rgb(150, 160, 180))]);
+    tarjeta.add([k.text(logro.descripcion, { size: 9 }), k.pos(34, 19), k.color(ganado ? COLOR_TEXTO : k.rgb(120, 130, 150))]);
+  });
+
+  crearBoton("Volver (0)", 240, 336, 160, () => k.go("acuario"));
   k.onKeyPress("0", () => k.go("acuario"));
   k.onKeyPress("escape", () => k.go("acuario"));
 });
@@ -1249,6 +1530,7 @@ k.scene("tienda", () => {
       else lista.push(articulo.id);           // no estaba: lo ponemos
     }
     actualizarTarjetas();
+    revisarLogros();
   }
 
   // --- Tarjetas de los artículos (2 filas de 3) ---
@@ -1295,6 +1577,12 @@ k.scene("despedida", () => {
     k.text("En la vida real necesitan agua limpia y fría.", { size: 14, width: 440, align: "center" }),
     k.pos(240, 230),
     k.anchor("center"),
+  ]);
+  k.add([
+    k.text("Vivió " + diasVivo() + (diasVivo() === 1 ? " día" : " días") + "   ·   Récord: " + datosJuego.recordDias, { size: 16 }),
+    k.pos(240, 262),
+    k.anchor("center"),
+    k.color(COLOR_DORADO),
   ]);
   k.add([k.text("Toca o presiona ESPACIO para intentarlo de nuevo", { size: 16 }), k.pos(240, 300), k.anchor("center")]);
 

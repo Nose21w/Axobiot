@@ -2,12 +2,13 @@
 // para que funcione SIN internet (como una app instalada).
 // 💡 Cada vez que cambies el juego, sube el número de versión
 // para que los celulares descarguen la nueva.
-const VERSION = "axobiot-v1";
+const VERSION = "axobiot-v2";
 const ARCHIVOS = [
   "./",
   "./index.html",
   "./main.js",
   "./lib/kaplay.js",
+  "./sonidos/comer.mp3",
   "./manifest.json",
   "./iconos/icono-192.png",
   "./iconos/icono-512.png",

@@ -31,8 +31,16 @@ para girar el celular.
 - **Click en las manchas**: limpias el agua.
 - **Monedas**: cae una cada 15 min (5 min si saludas 3 veces). Click para recogerla.
 - **3 / Tienda**: sombreros y decoraciones.
+- **5 / Trofeo** (esquina de la pecera): tus logros. Cada logro da 1 moneda.
+- **Día N** (arriba a la derecha): cuántos días lleva vivo tu ajolote.
 - **4 / Jugar**: minijuego "Atrapa la comida". Muévete con ← →, las teclas 1/2 o tocando la pantalla.
   Atrapa gusanos y esquiva la basura: cada 10 bocados = 1 moneda. Jugar sube el ánimo pero da hambre.
+
+## Comer
+
+Al comer suena `sonidos/comer.mp3` (1.5 s) y la comida se va achicando en
+7 mordidas, al ritmo del sonido. Los tiempos de cada mordida están en
+`MORDIDAS` en `main.js`: si cambias el audio, cámbialos también.
 
 ## El tiempo pasa aunque no juegues
 
