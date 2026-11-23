@@ -13,7 +13,12 @@ El juego funciona con el dedo, se juega en horizontal y se puede instalar como a
 1. Súbelo a internet con **GitHub Pages**: en el repositorio ve a
    *Settings → Pages → Build and deployment*, elige *Deploy from a branch*,
    selecciona la rama y la carpeta `/ (root)` y guarda. En unos minutos te da un link.
-2. Abre el link en el celular.
+2. Abre el link en el celular, o escanea el código QR de la carpeta `qr/`:
+   - `qr/qr-axobiot.png`: solo el código.
+   - `qr/cartel-axobiot.png`: cartel tamaño carta para imprimir, con instrucciones.
+
+   El QR apunta a https://nose21w.github.io/Axobiot/ y solo funciona
+   después de activar GitHub Pages.
 3. Instálalo:
    - **Android (Chrome):** menú ⋮ → *Instalar app* o *Agregar a pantalla principal*.
    - **iPhone (Safari):** botón compartir → *Agregar a inicio*.
