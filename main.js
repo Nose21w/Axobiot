@@ -93,6 +93,14 @@ const MINUTOS_MONEDA_NORMAL = 15;
 const MINUTOS_MONEDA_RAPIDA = 5;
 const SALUDOS_PARA_ACELERAR = 3;
 
+// Minijuego "Atrapa la comida"
+const SEGUNDOS_MINIJUEGO = 30;
+const VIDAS_MINIJUEGO = 3;
+const PUNTOS_POR_MONEDA = 10;     // cada 10 bocados atrapados = 1 moneda
+const COMIDA_PARA_JUGAR = 20;     // necesita al menos esta comida para jugar
+const COMIDA_QUE_GASTA_JUGAR = 10; // jugar da hambre
+const ANIMO_POR_JUGAR = 25;       // jugar lo pone contento
+
 // 💡 Para PROBAR rápido, cambia VELOCIDAD_DEL_TIEMPO a 60:
 // así 1 minuto real = 1 hora del juego. Antes de entregar, regrésalo a 1.
 const VELOCIDAD_DEL_TIEMPO = 1;
@@ -437,6 +445,20 @@ const dibujoCorona = [
   "QQQQQQQQQ",
 ];
 
+// --- Basura (para el minijuego) ---
+// En Xochimilco, donde viven los ajolotes, la basura en el agua
+// es uno de sus peores enemigos.
+const dibujoBasura = [
+  ".S...S.",
+  ".S...S.",
+  "SSSSSSS",
+  "SWSSSSS",
+  "SWSSSJS",
+  "SSSSJSS",
+  "SSSSSSS",
+  ".SSSSS.",
+];
+
 // --- Decoraciones de la pecera ---
 const dibujoTronco = [
   "......G.........",
@@ -482,7 +504,7 @@ k.loadSprite("ajolote",
 );
 const dibujosSimples = {
   lombriz: dibujoLombriz, gusanoSangre: dibujoGusanoSangre, artemia: dibujoArtemia,
-  mancha: dibujoMancha,
+  mancha: dibujoMancha, basura: dibujoBasura,
   corazon: dibujoCorazon, moneda: dibujoMoneda,
   fiesta: dibujoFiesta, copa: dibujoCopa, corona: dibujoCorona,
   tronco: dibujoTronco, cofre: dibujoCofre, castillo: dibujoCastillo,
@@ -694,11 +716,22 @@ k.scene("acuario", () => {
   const ALTURA_NADO = 180;
 
   // onUpdate se ejecuta en cada fotograma (unas 60 veces por segundo).
+  let destino = null;         // lugar del agua que tocaste (o null)
+
   ajolote.onUpdate(() => {
     if (bocadoActual) {
       // Si hay comida, nada directo hacia ella
       ajolote.moveTo(bocadoActual.pos, VELOCIDAD_PERSEGUIR);
       ajolote.flipX = bocadoActual.pos.x < ajolote.pos.x;
+    } else if (destino) {
+      // Si tocaste el agua, va a ver qué hay ahí
+      ajolote.moveTo(destino, VELOCIDAD_PERSEGUIR);
+      ajolote.flipX = destino.x < ajolote.pos.x;
+      // dist() mide la distancia entre dos puntos
+      if (ajolote.pos.dist(destino) < 3) {
+        direccion = ajolote.flipX ? -1 : 1; // sigue nadando hacia el mismo lado
+        destino = null;
+      }
     } else {
       // Si no, nada de lado a lado subiendo y bajando suave.
       // La velocidad vertical es mayor mientras más lejos está de la altura deseada.
@@ -876,13 +909,82 @@ k.scene("acuario", () => {
     mostrarMensaje("Estuviste fuera " + formatoAusencia(segundosFuera));
   }
 
+  // --- TOCAR EL AGUA: el ajolote nada hacia ahí ---
+  k.onMousePress(() => {
+    const punto = k.mousePos();
+    if (!estaEnPecera(punto)) return;
+    // Si tocaste una mancha, una moneda o al ajolote, eso tiene su propia acción
+    const tocoAlgo = ["mancha", "moneda", "ajolote"]
+      .some((tag) => k.get(tag).some((cosa) => cosa.isHovering()));
+    if (tocoAlgo) return;
+    // k.clamp() mantiene un número dentro de un rango (para que no se salga del agua)
+    destino = k.vec2(
+      k.clamp(punto.x, PECERA.izq + 35, PECERA.der - 35),
+      k.clamp(punto.y, PECERA.arriba + 25, ARENA_Y - 20),
+    );
+    // Un anillo de ondas donde tocaste
+    k.add([
+      k.circle(6, { fill: false }),
+      k.outline(2, colorBurbuja),
+      k.pos(punto),
+      k.opacity(1),
+      k.lifespan(0.4, { fade: 0.4 }),
+      k.scale(1),
+      k.z(40),
+      {
+        update() { this.scale = this.scale.add(4 * k.dt(), 4 * k.dt()); },
+      },
+    ]);
+  });
+
+  // --- BURBUJA DE PENSAMIENTO: el ajolote te dice qué necesita ---
+  // Devuelve el sprite de lo que más necesita (o null si está bien)
+  function queNecesita() {
+    if (datosJuego.alimentado < 40) return "lombriz";
+    if (calcularLimpieza() < 55) return "mancha";
+    if (datosJuego.animo < 40) return "corazon";
+    return null;
+  }
+  const posBurbujaPensamiento = k.vec2(0, 0);
+  const posPuntito = k.vec2(0, 0);
+  const colorBlanco = k.rgb(255, 255, 255);
+  k.add([
+    k.z(60),
+    {
+      draw() {
+        const necesidad = queNecesita();
+        if (!necesidad || tiempoFeliz > 0) return;
+        // La burbuja flota arriba del ajolote y sube y baja un poquito
+        const lado = ajolote.flipX ? -1 : 1;
+        posBurbujaPensamiento.x = ajolote.pos.x + lado * 24;
+        posBurbujaPensamiento.y = ajolote.pos.y - 44 + Math.sin(k.time() * 3) * 2;
+        posPuntito.x = ajolote.pos.x + lado * 14;
+        posPuntito.y = ajolote.pos.y - 22;
+        k.drawCircle({ pos: posPuntito, radius: 3, color: colorBlanco });
+        k.drawCircle({ pos: posBurbujaPensamiento, radius: 15, color: colorBlanco });
+        k.drawSprite({ sprite: necesidad, pos: posBurbujaPensamiento, anchor: "center", scale: ESCALA_2 });
+      },
+    },
+  ]);
+
   // --- Botones (click/dedo) y teclas (para botones físicos) ---
-  crearBoton("Alimentar (1)", 88, 330, 145, soltarBocado);
-  crearBoton("Saludar (2)", 240, 330, 145, saludarAjolote);
-  crearBoton("Tienda (3)", 392, 330, 145, () => k.go("tienda"));
+  crearBoton("Comer (1)", 63, 330, 108, soltarBocado);
+  crearBoton("Saludar (2)", 181, 330, 108, saludarAjolote);
+  crearBoton("Tienda (3)", 299, 330, 108, () => k.go("tienda"));
+  crearBoton("Jugar (4)", 417, 330, 108, irAJugar);
   k.onKeyPress("1", soltarBocado);
   k.onKeyPress("2", saludarAjolote);
   k.onKeyPress("3", () => k.go("tienda"));
+  k.onKeyPress("4", irAJugar);
+
+  // Jugar da hambre: si tiene mucha hambre, primero que coma
+  function irAJugar() {
+    if (datosJuego.alimentado < COMIDA_PARA_JUGAR) {
+      mostrarMensaje("Tiene hambre. ¡Primero dale de comer!");
+      return;
+    }
+    k.go("jugar");
+  }
 
   // --- Barras de necesidades (arriba) ---
   const ANCHO_BARRA = 100;
@@ -944,6 +1046,164 @@ k.scene("acuario", () => {
       ajolote.play(nuevoAnimo);
     }
   });
+});
+
+// ===== 8b. MINIJUEGO: ATRAPA LA COMIDA =====
+// Mueve al ajolote para atrapar lombrices, gusanos y artemias.
+// ¡Esquiva la basura! Cada 10 bocados ganas 1 moneda.
+k.scene("jugar", () => {
+  let puntos = 0;
+  let vidas = VIDAS_MINIJUEGO;
+  let tiempo = SEGUNDOS_MINIJUEGO;
+  let terminado = false;
+  let tiempoCaraFeliz = 0;
+
+  // --- Fondo: agua y arena ---
+  k.add([k.rect(480, 262), k.pos(0, 40), k.color(60, 140, 190), k.z(-1)]);
+  k.add([k.rect(480, 58), k.pos(0, 302), k.color(222, 196, 140), k.z(-1)]);
+
+  // --- El ajolote (nada solo de lado a lado, abajo) ---
+  const jugador = k.add([
+    k.sprite("ajolote", { anim: "nadar" }),
+    k.pos(240, 288),
+    k.anchor("center"),
+    k.scale(3),
+    // scale en area() hace la zona de choque un poco más chica que el dibujo,
+    // así se siente más justo cuando algo "casi" lo toca.
+    k.area({ isSensor: true, scale: k.vec2(0.8, 0.6) }),
+  ]);
+  // Si trae sombrero, también juega con él puesto
+  let sombrero = null;
+  if (datosJuego.sombreroPuesto) {
+    sombrero = jugador.add([k.sprite(datosJuego.sombreroPuesto), k.pos(4, -3), k.anchor("bot")]);
+  }
+
+  // --- Controles: flechas, teclas 1/2 o tocar la pantalla ---
+  const VELOCIDAD_JUGADOR = 260;
+  jugador.onUpdate(() => {
+    if (terminado) return;
+    let mover = 0;
+    if (k.isKeyDown("left") || k.isKeyDown("a") || k.isKeyDown("1")) mover = -1;
+    if (k.isKeyDown("right") || k.isKeyDown("d") || k.isKeyDown("2")) mover = 1;
+    // Con el dedo o el mouse: nada hacia donde estás tocando
+    if (k.isMouseDown()) {
+      const distancia = k.mousePos().x - jugador.pos.x;
+      if (Math.abs(distancia) > 4) mover = Math.sign(distancia);
+    }
+    jugador.move(mover * VELOCIDAD_JUGADOR, 0);
+    jugador.pos = k.vec2(k.clamp(jugador.pos.x, 35, 445), jugador.pos.y);
+    if (mover !== 0) jugador.flipX = mover < 0;
+    if (sombrero) {
+      sombrero.flipX = jugador.flipX;
+      sombrero.pos = jugador.flipX ? k.vec2(-4, -3) : k.vec2(4, -3);
+    }
+    // Cara feliz un ratito después de comer
+    tiempoCaraFeliz = Math.max(0, tiempoCaraFeliz - k.dt());
+    const cara = tiempoCaraFeliz > 0 ? "feliz" : "nadar";
+    if (jugador.getCurAnim()?.name !== cara) jugador.play(cara);
+  });
+
+  // --- Cosas que caen ---
+  function soltarCosa() {
+    if (terminado) return;
+    const esBasura = k.rand() < 0.25; // 1 de cada 4 es basura
+    // Mientras más avanza el juego, más rápido caen
+    const rapidez = 90 + (SEGUNDOS_MINIJUEGO - tiempo) * 5;
+    k.add([
+      k.sprite(esBasura ? "basura" : k.choose(COMIDAS).sprite),
+      k.pos(k.rand(30, 450), 40),
+      k.anchor("center"),
+      k.scale(2.5),
+      k.area({ isSensor: true }),
+      k.move(k.DOWN, rapidez),
+      k.offscreen({ destroy: true }), // si se sale de la pantalla, se borra solo
+      esBasura ? "basura" : "comidaQueCae",
+    ]);
+  }
+  const relojCaida = k.loop(0.6, soltarCosa);
+
+  // --- Atrapar ---
+  jugador.onCollide("comidaQueCae", (comida) => {
+    comida.destroy();
+    puntos++;
+    tiempoCaraFeliz = 0.4;
+    k.add(crearTextoFlotante("+1", comida.pos.x, comida.pos.y - 10, COLOR_DORADO));
+  });
+  jugador.onCollide("basura", (basura) => {
+    basura.destroy();
+    vidas--;
+    k.shake(6); // la pantalla tiembla
+    k.add(crearTextoFlotante("¡Basura no!", jugador.pos.x, jugador.pos.y - 40, k.rgb(255, 120, 120)));
+    if (vidas <= 0) terminar();
+  });
+
+  // --- Reloj del minijuego ---
+  k.onUpdate(() => {
+    if (terminado) return;
+    tiempo -= k.dt();
+    if (tiempo <= 0) terminar();
+  });
+
+  // --- Marcador (arriba) ---
+  const posCorazon = k.vec2(0, 12);
+  const posPuntos = k.vec2(14, 12);
+  const posTiempo = k.vec2(190, 12);
+  k.add([
+    k.z(100),
+    {
+      draw() {
+        k.drawText({ text: "Bocados: " + puntos, pos: posPuntos, size: 16, color: COLOR_TEXTO });
+        k.drawText({ text: "Tiempo: " + Math.max(0, Math.ceil(tiempo)), pos: posTiempo, size: 16, color: COLOR_TEXTO });
+        for (let i = 0; i < vidas; i++) {
+          posCorazon.x = 400 + i * 24;
+          k.drawSprite({ sprite: "corazon", pos: posCorazon, scale: ESCALA_3 });
+        }
+      },
+    },
+  ]);
+
+  // Instrucciones al empezar (se borran solas)
+  k.add([
+    k.text("Toca o usa ← → para moverte\n¡Atrapa la comida y esquiva la basura!", { size: 15, align: "center" }),
+    k.pos(240, 170),
+    k.anchor("center"),
+    k.opacity(1),
+    k.lifespan(2.5, { fade: 0.5 }),
+    k.z(100),
+  ]);
+
+  // --- Fin del juego: premios ---
+  function terminar() {
+    if (terminado) return;
+    terminado = true;
+    relojCaida.cancel();
+    for (const cosa of [...k.get("comidaQueCae"), ...k.get("basura")]) cosa.destroy();
+
+    const monedasGanadas = Math.floor(puntos / PUNTOS_POR_MONEDA);
+    datosJuego.monedas += monedasGanadas;
+    datosJuego.animo = Math.min(100, datosJuego.animo + ANIMO_POR_JUGAR);
+    datosJuego.alimentado = Math.max(0, datosJuego.alimentado - COMIDA_QUE_GASTA_JUGAR);
+    guardarPartida();
+
+    const panel = k.add([
+      k.rect(320, 190, { radius: 12 }),
+      k.pos(240, 175),
+      k.anchor("center"),
+      k.color(40, 60, 90),
+      k.outline(3, k.rgb(120, 160, 210)),
+      // Sin z(): como se agrega al final, ya se dibuja encima.
+      // (En v4000, si le pones z al papá, sus hijos de texto quedan atrás)
+    ]);
+    panel.add([k.text(vidas <= 0 ? "¡Mucha basura!" : "¡Se acabó el tiempo!", { size: 22 }), k.pos(0, -65), k.anchor("center"), k.color(COLOR_DORADO)]);
+    panel.add([k.text("Atrapaste " + puntos + " bocados", { size: 16 }), k.pos(0, -30), k.anchor("center")]);
+    panel.add([k.text("Monedas: +" + monedasGanadas, { size: 16 }), k.pos(0, -5), k.anchor("center"), k.color(COLOR_DORADO)]);
+    panel.add([k.text("Ánimo: +" + ANIMO_POR_JUGAR + "   Comida: -" + COMIDA_QUE_GASTA_JUGAR, { size: 14 }), k.pos(0, 20), k.anchor("center")]);
+    crearBoton("Volver (0)", 240, 235, 160, () => k.go("acuario"));
+  }
+
+  // Salir: si sales antes de terminar, no hay premio
+  k.onKeyPress("0", () => k.go("acuario"));
+  k.onKeyPress("escape", () => k.go("acuario"));
 });
 
 // ===== 9. ESCENA DE LA TIENDA =====

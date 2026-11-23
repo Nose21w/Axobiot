@@ -6,11 +6,15 @@ Tamagotchi de ajolote hecho con [KAPLAY](https://kaplayjs.com) v4000.
 
 Abre `index.html` en el navegador (o sírvelo con `npx serve .`).
 
-- **1 / Alimentar**: suelta comida de ajolote: lombriz, gusano de sangre o artemia.
+- **Toca el agua**: el ajolote nada hacia ahí.
+- **Burbuja**: el ajolote te muestra lo que necesita (comida, limpieza o cariño).
+- **1 / Comer**: suelta comida de ajolote: lombriz, gusano de sangre o artemia.
 - **2 / Saludar** o click en el ajolote: se pone feliz.
 - **Click en las manchas**: limpias el agua.
 - **Monedas**: cae una cada 15 min (5 min si saludas 3 veces). Click para recogerla.
 - **3 / Tienda**: sombreros y decoraciones.
+- **4 / Jugar**: minijuego "Atrapa la comida". Muévete con ← →, las teclas 1/2 o tocando la pantalla.
+  Atrapa gusanos y esquiva la basura: cada 10 bocados = 1 moneda. Jugar sube el ánimo pero da hambre.
 
 ## El tiempo pasa aunque no juegues
 
