@@ -38,8 +38,11 @@ para girar el celular.
 - **3 / Tienda**: sombreros y decoraciones.
 - **5 / Trofeo** (esquina de la pecera): tus logros. Cada logro da 1 moneda.
 - **Día N** (arriba a la derecha): cuántos días lleva vivo tu ajolote.
-- **4 / Jugar**: minijuego "Atrapa la comida". Muévete con ← →, las teclas 1/2 o tocando la pantalla.
-  Atrapa gusanos y esquiva la basura: cada 10 bocados = 1 moneda. Jugar sube el ánimo pero da hambre.
+- **4 / Jugar**: abre el menú de **minijuegos** (elige con el dedo o con 1, 2, 3).
+  Todos dan monedas, suben el ánimo y dan hambre; si tiene mucha hambre, primero hay que alimentarlo.
+  1. **Atrapa la comida**: muévete con ← →, las teclas 1/2 o tocando. Atrapa gusanos y esquiva la basura (10 bocados = 1 moneda).
+  2. **Limpia el canal**: toca la basura (o su número del 1 al 9) antes de que se hunda. ¡No toques a los ajolotitos! (8 basuras = 1 moneda).
+  3. **Memorama**: encuentra las 6 parejas tocando o con flechas + ESPACIO. Menos movimientos = más monedas (hasta 3).
 
 ## Comer
 
