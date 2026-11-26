@@ -78,6 +78,11 @@ const datosJuego = {
   mejorLimpia: 0,             // récord de basura sacada en "Limpia el canal"
   mejorMemorama: 0,           // récord de "Memorama" (menos movimientos = mejor; 0 = sin récord)
   minijuegoPerfecto: false,   // ¿terminó el minijuego sin tocar basura?
+  // --- Tu ajolote ---
+  nombre: null,               // null = todavía no tiene nombre (se elige al empezar)
+  color: "rosa",              // id de COLORES_AJOLOTE
+  segundosBuenCuidado: 0,     // tiempo bien cuidado: con esto CRECE
+  etapaVista: "larva",        // la última etapa que le mostramos al jugador
 };
 
 // Si el ajolote se enferma, reiniciamos sus necesidades,
@@ -86,6 +91,9 @@ function reiniciarNecesidades() {
   Object.assign(datosJuego, necesidadesIniciales);
   datosJuego.segundosMancha = 0;
   datosJuego.segundosVivo = 0; // un ajolote nuevo empieza en el día 1
+  datosJuego.segundosBuenCuidado = 0; // y empieza como larva
+  datosJuego.etapaVista = "larva";
+  datosJuego.nombre = null;    // al nuevo ajolote le pondrás nombre y color otra vez
   datosJuego.ultimaVez = Date.now();
   guardarPartida();
 }
@@ -170,6 +178,49 @@ function simular(segundos) {
     datosJuego.salud += horas * 100 / HORAS_PARA_CURARSE;
   }
   datosJuego.salud = Math.max(0, Math.min(100, datosJuego.salud));
+
+  // CRECER: solo cuenta el tiempo en que está bien cuidado
+  if (datosJuego.alimentado >= 30 && limpieza >= 55 && datosJuego.animo >= 30) {
+    datosJuego.segundosBuenCuidado += segundos;
+  }
+}
+
+// ===== 2c. CRECIMIENTO =====
+// Los ajolotes nacen como larvas chiquitas (casi sin patas)
+// y van creciendo. Aquí crece con los DÍAS BIEN CUIDADO.
+const DIAS_PARA_JOVEN = 1;
+const DIAS_PARA_ADULTO = 3;
+// forma = qué dibujo usa; escala = qué tan grande se ve;
+// sombrero y boca = dónde quedan (en píxeles del dibujo).
+const ETAPAS = {
+  larva:  { nombre: "Larva",  forma: "larva",  escala: 3, sombrero: [2, -2], boca: [5.5, 0.7] },
+  joven:  { nombre: "Joven",  forma: "adulto", escala: 2.3, sombrero: [4, -3], boca: [7.3, 1.3] },
+  adulto: { nombre: "Adulto", forma: "adulto", escala: 3,   sombrero: [4, -3], boca: [7.3, 1.3] },
+};
+
+function etapaActual() {
+  const dias = datosJuego.segundosBuenCuidado / 86400;
+  if (dias >= DIAS_PARA_ADULTO) return "adulto";
+  if (dias >= DIAS_PARA_JOVEN) return "joven";
+  return "larva";
+}
+
+// ¿Cuántas horas de buen cuidado le faltan para crecer? (null si ya es adulto)
+function horasParaCrecer() {
+  const etapa = etapaActual();
+  if (etapa === "adulto") return null;
+  const meta = (etapa === "larva" ? DIAS_PARA_JOVEN : DIAS_PARA_ADULTO) * 86400;
+  return Math.ceil((meta - datosJuego.segundosBuenCuidado) / 3600);
+}
+
+// El nombre del sprite según su color y su etapa. Ej: "ajolote-dorado-larva"
+function spriteAjolote(color = datosJuego.color, etapa = etapaActual()) {
+  return "ajolote-" + color + "-" + ETAPAS[etapa].forma;
+}
+
+// El nombre de tu ajolote (o "Tu ajolote" si todavía no tiene)
+function nombreAjolote() {
+  return datosJuego.nombre || "Tu ajolote";
 }
 
 // Mira el reloj real y aplica todo el tiempo que pasó desde la última vez.
@@ -207,7 +258,16 @@ function guardarPartida() {
 function cargarPartida() {
   try {
     const texto = localStorage.getItem(CLAVE_GUARDADO);
-    if (texto) Object.assign(datosJuego, JSON.parse(texto));
+    if (!texto) return;
+    const guardado = JSON.parse(texto);
+    // Partidas de antes de que existiera el crecimiento:
+    // contamos todo su tiempo de vida para que no vuelva a ser larva.
+    if (!("segundosBuenCuidado" in guardado)) {
+      guardado.segundosBuenCuidado = guardado.segundosVivo || 0;
+      guardado.etapaVista = null; // se calcula abajo
+    }
+    Object.assign(datosJuego, guardado);
+    if (!datosJuego.etapaVista) datosJuego.etapaVista = etapaActual();
   } catch (error) {
     // Partida dañada o sin permiso: empezamos de nuevo
   }
@@ -311,7 +371,9 @@ const PALETA = {
 // Convierte el dibujo de letras en una imagen.
 // "cuadros" es una lista de dibujos; se ponen uno junto a otro
 // para hacer una animación (como las hojas de un folioscopio).
-function crearImagenPixel(cuadros) {
+// "paleta" permite pintar el MISMO dibujo con otros colores
+// (así hacemos los ajolotes de colores sin dibujarlos otra vez).
+function crearImagenPixel(cuadros, paleta = PALETA) {
   const alto = cuadros[0].length;
   const ancho = Math.max(...cuadros[0].map((fila) => fila.length));
   const lienzo = document.createElement("canvas");
@@ -322,7 +384,7 @@ function crearImagenPixel(cuadros) {
   cuadros.forEach((cuadro, numero) => {
     cuadro.forEach((fila, y) => {
       for (let x = 0; x < fila.length; x++) {
-        const color = PALETA[fila[x]];
+        const color = paleta[fila[x]];
         if (color) {
           pincel.fillStyle = color;
           pincel.fillRect(numero * ancho + x, y, 1, 1);
@@ -541,6 +603,62 @@ const dibujoCastillo = [
   "XXXXKKKKKXXXX",
 ];
 
+// --- Larva: 4 cuadros (nadar 1, nadar 2, feliz, triste) ---
+// Las larvas de ajolote son chiquitas, de cabeza grande
+// y al principio solo tienen las patas de adelante.
+const larvaNadar1 = [
+  "........R.R...",
+  "......PPPPPP..",
+  ".....PPPPPKWP.",
+  "PP..PPPPPPKKPP",
+  ".PPPPPPPPPPPKP",
+  "..PPLLLLLPPPP.",
+  "........P.....",
+  "........P.....",
+];
+const larvaNadar2 = [
+  "........R.R...",
+  "......PPPPPP..",
+  ".....PPPPPKWP.",
+  "....PPPPPPKKPP",
+  "PPPPPPPPPPPPKP",
+  "P.PPLLLLLPPPP.",
+  ".........P....",
+  ".........P....",
+];
+const larvaFeliz = [
+  "........R.R...",
+  "......PPPPPP..",
+  ".....PPPPPKPP.",
+  "PP..PPPPPKPKPP",
+  ".PPPPPPPPRPPPP",
+  "..PPLLLLLPPKK.",
+  "........P.....",
+  "........P.....",
+];
+const larvaTriste = [
+  "........R.R...",
+  "......PPPPPP..",
+  ".....PPPPPKWP.",
+  "PP..PPPPPPKKPP",
+  ".PPPPPPPPPAPPP",
+  "..PPLLLLLPPPK.",
+  "........P.....",
+  "........P.....",
+];
+
+// --- Colores de ajolote (¡existen de verdad!) ---
+// Cada color solo cambia algunas letras de la PALETA.
+const COLORES_AJOLOTE = [
+  { id: "rosa", nombre: "Leucístico", dato: "Rosado con ojos oscuros", paleta: {} },
+  { id: "salvaje", nombre: "Salvaje", dato: "Café verdoso, como en Xochimilco",
+    paleta: { P: "#6b7a45", L: "#8d9a62", R: "#4b5a30", W: "#e6d36a" } },
+  { id: "dorado", nombre: "Dorado", dato: "Albino dorado: amarillo y ojos claros",
+    paleta: { P: "#f2c14e", L: "#fbe3a0", R: "#f08a5d", K: "#c0605a", W: "#ffffff" } },
+  { id: "melanoide", nombre: "Melanoide", dato: "Casi negro y sin brillos",
+    paleta: { P: "#3a3440", L: "#4f4858", R: "#5a4a66", K: "#111014", W: "#3a3440" } },
+];
+
 // ===== 5. CARGAR LOS SPRITES =====
 // sliceX: 4 = la imagen tiene 4 cuadros, uno junto a otro.
 k.loadSprite("ajolote",
@@ -554,6 +672,26 @@ k.loadSprite("ajolote",
     },
   },
 );
+// Un sprite por cada color y forma: "ajolote-rosa-larva", "ajolote-dorado-adulto", ...
+const FORMAS_AJOLOTE = {
+  larva: [larvaNadar1, larvaNadar2, larvaFeliz, larvaTriste],
+  adulto: [ajoloteNadar1, ajoloteNadar2, ajoloteFeliz, ajoloteTriste],
+};
+for (const color of COLORES_AJOLOTE) {
+  for (const forma in FORMAS_AJOLOTE) {
+    k.loadSprite("ajolote-" + color.id + "-" + forma,
+      crearImagenPixel(FORMAS_AJOLOTE[forma], { ...PALETA, ...color.paleta }),
+      {
+        sliceX: 4,
+        anims: {
+          nadar: { from: 0, to: 1, loop: true, speed: 3 },
+          feliz: 2,
+          triste: 3,
+        },
+      },
+    );
+  }
+}
 const dibujosSimples = {
   lombriz: dibujoLombriz, gusanoSangre: dibujoGusanoSangre, artemia: dibujoArtemia,
   mancha: dibujoMancha, basura: dibujoBasura, miga: dibujoMiga, trofeo: dibujoTrofeo,
@@ -575,6 +713,7 @@ for (const nombre in dibujosSimples) {
 // leer el audio, el juego sigue funcionando, solo que sin sonido.
 // (Si se lo diéramos directo a loadSound y fallara, se detendría TODO el juego.)
 let sonidoComerListo = false;
+let avisoAusenciaMostrado = false; // el "Estuviste fuera..." sale solo una vez
 async function cargarSonidoComer() {
   try {
     const Contexto = window.AudioContext || window.webkitAudioContext;
@@ -736,6 +875,10 @@ const LOGROS = [
     cumple: () => datosJuego.mejorLimpia >= 25 },
   { id: "memoria", nombre: "Buena memoria", descripcion: "Memorama en 10 movimientos o menos",
     cumple: () => datosJuego.mejorMemorama > 0 && datosJuego.mejorMemorama <= 10 },
+  { id: "joven", nombre: "¡Está creciendo!", descripcion: "Que llegue a joven",
+    cumple: () => etapaActual() !== "larva" },
+  { id: "adulto", nombre: "¡Ya es adulto!", descripcion: "Que llegue a adulto",
+    cumple: () => etapaActual() === "adulto" },
   { id: "dia3", nombre: "3 días juntos", descripcion: "Cuídalo hasta el día 3",
     cumple: () => diasVivo() >= 3 },
   { id: "dia7", nombre: "Una semana", descripcion: "Cuídalo hasta el día 7",
@@ -788,16 +931,172 @@ function mostrarAvisoLogro(logro) {
 // Una escena es como un cuarto de una casa:
 // cada cuarto tiene sus propias cosas.
 k.scene("inicio", () => {
-  k.add([k.text("AXOBIOT", { size: 48 }), k.pos(240, 90), k.anchor("center"), k.color(255, 173, 198)]);
-  k.add([k.sprite("ajolote", { anim: "nadar" }), k.pos(240, 190), k.anchor("center"), k.scale(5)]);
+  k.add([k.text("AXOBIOT", { size: 48 }), k.pos(240, 80), k.anchor("center"), k.color(255, 173, 198)]);
+  // Si ya tienes ajolote, sale TU ajolote; si no, uno rosa
+  const tieneAjolote = datosJuego.nombre && datosJuego.salud > 0;
+  const etapa = ETAPAS[etapaActual()];
+  k.add([
+    k.sprite(tieneAjolote ? spriteAjolote() : "ajolote", { anim: "nadar" }),
+    k.pos(240, 180),
+    k.anchor("center"),
+    k.scale(tieneAjolote ? etapa.escala * 1.7 : 5),
+  ]);
+  if (tieneAjolote) {
+    k.add([k.text(datosJuego.nombre + " te está esperando", { size: 16 }), k.pos(240, 245), k.anchor("center"), k.color(COLOR_DORADO)]);
+  }
   k.add([k.text("Toca o presiona ESPACIO para empezar", { size: 18 }), k.pos(240, 290), k.anchor("center")]);
 
   function empezar() {
     // Si se enfermó mientras no estabas, vamos directo a la despedida
-    k.go(datosJuego.salud <= 0 ? "despedida" : "acuario");
+    if (datosJuego.salud <= 0) k.go("despedida");
+    // Si todavía no tiene nombre, primero lo conoces
+    else if (!datosJuego.nombre) k.go("nuevoAjolote");
+    else k.go("acuario");
   }
   k.onKeyPress("space", empezar);
   k.onMousePress(empezar);
+});
+
+// ===== 7b. ESCENA: TU NUEVO AJOLOTE (nombre y color) =====
+// Ponerle nombre y elegir su color hace que se sienta TUYO.
+// Para escribir usamos una caja de texto del navegador (<input>) escondida:
+// así en el celular sale el teclado de la pantalla.
+// Convierte un toque del navegador a coordenadas del juego (480 x 360).
+// Con letterbox el juego se agranda y se centra dentro del canvas.
+function puntoDelJuego(evento) {
+  const cuadro = k.canvas.getBoundingClientRect();
+  const escala = Math.min(cuadro.width / k.width(), cuadro.height / k.height());
+  const sobraX = (cuadro.width - k.width() * escala) / 2;
+  const sobraY = (cuadro.height - k.height() * escala) / 2;
+  return k.vec2(
+    (evento.clientX - cuadro.left - sobraX) / escala,
+    (evento.clientY - cuadro.top - sobraY) / escala,
+  );
+}
+
+const NOMBRES_AL_AZAR = ["Atl", "Xochi", "Axo", "Tlali", "Mochi", "Nube", "Kiki", "Lolo", "Chimal", "Rosita", "Pancho", "Meztli"];
+
+k.scene("nuevoAjolote", () => {
+  let colorElegido = datosJuego.color;
+  let nombre = "";
+
+  k.add([k.text("¡Conoce a tu ajolote!", { size: 24 }), k.pos(240, 22), k.anchor("center"), k.color(COLOR_DORADO)]);
+
+  // Vista previa: una larva (todos empiezan así) del color elegido
+  const vista = k.add([
+    k.sprite(spriteAjolote(colorElegido, "larva"), { anim: "nadar" }),
+    k.pos(240, 72),
+    k.anchor("center"),
+    k.scale(4.5),
+  ]);
+
+  // --- Colores ---
+  const textoDato = k.add([k.text("", { size: 12 }), k.pos(240, 196), k.anchor("center"), k.color(190, 205, 225)]);
+  const muestras = COLORES_AJOLOTE.map((color, i) => {
+    const muestra = k.add([
+      k.rect(104, 66, { radius: 10 }),
+      k.pos(66 + i * 116, 150),
+      k.anchor("center"),
+      k.color(40, 60, 90),
+      k.outline(3, k.rgb(70, 90, 120)),
+      k.area(),
+    ]);
+    muestra.add([k.sprite(spriteAjolote(color.id, "larva"), { frame: 0 }), k.pos(0, -8), k.anchor("center"), k.scale(2.5)]);
+    muestra.add([k.text(color.nombre, { size: 11 }), k.pos(0, 20), k.anchor("center")]);
+    muestra.onClick(() => elegirColor(color.id));
+    return { muestra, color };
+  });
+  function elegirColor(id) {
+    colorElegido = id;
+    vista.use(k.sprite(spriteAjolote(colorElegido, "larva"), { anim: "nadar" }));
+    for (const { muestra, color } of muestras) {
+      muestra.outline.color = color.id === id ? COLOR_DORADO : k.rgb(70, 90, 120);
+      if (color.id === id) textoDato.text = color.dato;
+    }
+  }
+  elegirColor(colorElegido);
+  // Con el teclado: flechas para cambiar de color
+  k.onKeyPress("left", () => {
+    const i = COLORES_AJOLOTE.findIndex((c) => c.id === colorElegido);
+    elegirColor(COLORES_AJOLOTE[(i + COLORES_AJOLOTE.length - 1) % COLORES_AJOLOTE.length].id);
+  });
+  k.onKeyPress("right", () => {
+    const i = COLORES_AJOLOTE.findIndex((c) => c.id === colorElegido);
+    elegirColor(COLORES_AJOLOTE[(i + 1) % COLORES_AJOLOTE.length].id);
+  });
+
+  // --- Nombre ---
+  const textoAviso = k.add([k.text("", { size: 13 }), k.pos(240, 288), k.anchor("center"), k.color(255, 150, 150)]);
+  const caja = k.add([
+    k.rect(230, 36, { radius: 8 }),
+    k.pos(205, 246),
+    k.anchor("center"),
+    k.color(230, 240, 250),
+    k.outline(3, k.rgb(120, 160, 210)),
+    k.area(),
+  ]);
+  const textoNombre = caja.add([k.text("", { size: 18 }), k.anchor("center"), k.color(COLOR_TEXTO_OSCURO)]);
+  crearBoton("Al azar", 385, 246, 100, () => ponerNombre(k.choose(NOMBRES_AL_AZAR)));
+
+  // La caja de texto real del navegador (invisible)
+  const entrada = document.createElement("input");
+  entrada.maxLength = 12;
+  entrada.autocomplete = "off";
+  entrada.setAttribute("aria-label", "Nombre de tu ajolote");
+  // font-size 16px: así el iPhone no hace zoom al escribir
+  entrada.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0;";
+  document.body.appendChild(entrada);
+  entrada.addEventListener("input", () => {
+    nombre = entrada.value;
+    textoAviso.text = "";
+  });
+  entrada.addEventListener("keydown", (evento) => {
+    if (evento.key === "Enter") listo();
+  });
+  // El celular solo abre el teclado si el foco se pide DURANTE el toque,
+  // por eso escuchamos el toque directo en el canvas del juego.
+  // (No sirve caja.isHovering(): KAPLAY lo calcula una vez por cuadro,
+  // y en el instante del toque todavía no se entera.)
+  function alTocar(evento) {
+    if (caja.hasPoint(puntoDelJuego(evento))) entrada.focus();
+  }
+  k.canvas.addEventListener("pointerup", alTocar);
+  // En la compu, puedes escribir de una vez
+  if (!window.matchMedia("(pointer: coarse)").matches) entrada.focus();
+
+  function ponerNombre(texto) {
+    entrada.value = texto;
+    nombre = texto;
+    textoAviso.text = "";
+  }
+
+  // Al salir de esta escena, quitamos la caja de texto
+  k.onSceneLeave(() => {
+    entrada.remove();
+    k.canvas.removeEventListener("pointerup", alTocar);
+    // Le regresamos el teclado al juego (si no, las teclas dejan de funcionar)
+    k.canvas.focus();
+  });
+
+  // El nombre con un cursor que parpadea
+  k.onUpdate(() => {
+    const cursor = document.activeElement === entrada && Math.floor(k.time() * 2) % 2 === 0 ? "|" : "";
+    textoNombre.text = nombre ? nombre + cursor : (cursor || "Toca para escribir");
+    textoNombre.color = nombre ? COLOR_TEXTO_OSCURO : k.rgb(140, 150, 165);
+  });
+
+  function listo() {
+    const limpio = nombre.trim();
+    if (!limpio) {
+      textoAviso.text = "¡Ponle un nombre! (o toca \"Al azar\")";
+      return;
+    }
+    datosJuego.nombre = limpio;
+    datosJuego.color = colorElegido;
+    guardarPartida();
+    k.go("acuario");
+  }
+  crearBoton("¡Listo!", 240, 330, 160, listo);
 });
 
 // ===== 8. ESCENA DEL ACUARIO (juego principal) =====
@@ -853,12 +1152,14 @@ k.scene("acuario", () => {
   k.add(crearPared(PECERA.izq, "izquierda"));
   k.add(crearPared(PECERA.der - 10, "derecha"));
 
-  // --- El ajolote ---
+  // --- El ajolote (con SU color y SU etapa) ---
+  const etapa = ETAPAS[etapaActual()];
+  const escalaBase = k.vec2(etapa.escala); // su tamaño normal (se apachurra y regresa a este)
   const ajolote = k.add([
-    k.sprite("ajolote", { anim: "nadar" }),
+    k.sprite(spriteAjolote(), { anim: "nadar" }),
     k.pos(240, 180),
     k.anchor("center"),
-    k.scale(3),
+    k.scale(escalaBase),
     k.area({ isSensor: true }),
     k.health(datosJuego.salud, 100), // vida: empieza con la salud guardada
     k.timer(),                       // su propio reloj para wait() y tween()
@@ -870,8 +1171,9 @@ k.scene("acuario", () => {
   // y crece con él (hereda su escala).
   // Posiciones del sombrero sobre la cabeza (en píxeles del dibujo),
   // mirando a la derecha y a la izquierda.
-  const SOMBRERO_DERECHA = k.vec2(4, -3);
-  const SOMBRERO_IZQUIERDA = k.vec2(-4, -3);
+  // (Cambian según la etapa: la cabeza de la larva está en otro lugar)
+  const SOMBRERO_DERECHA = k.vec2(etapa.sombrero[0], etapa.sombrero[1]);
+  const SOMBRERO_IZQUIERDA = k.vec2(-etapa.sombrero[0], etapa.sombrero[1]);
   let sombrero = null;
   if (datosJuego.sombreroPuesto) {
     sombrero = ajolote.add([
@@ -953,7 +1255,7 @@ k.scene("acuario", () => {
     // Con anchor "left" (o "right") se hace chica HACIA la boca,
     // como si se la fuera metiendo.
     const lado = ajolote.flipX ? -1 : 1;
-    const boca = ajolote.pos.add(lado * 22, 4);
+    const boca = ajolote.pos.add(lado * etapa.boca[0] * etapa.escala, etapa.boca[1] * etapa.escala);
     bocado.anchor = lado > 0 ? "left" : "right";
     bocado.pos = boca;
     const tamanoInicial = bocado.scale.x;
@@ -993,7 +1295,7 @@ k.scene("acuario", () => {
         // Más migajas y más apachurrón en las mordidas fuertes
         migajas.emit(Math.round(3 + mordida.fuerza * 7));
         const apachurron = 0.3 * mordida.fuerza;
-        ajolote.tween(k.vec2(3 + apachurron, 3 - apachurron), ESCALA_3, 0.16, (escala) => {
+        ajolote.tween(k.vec2(etapa.escala * (1 + apachurron / 3), etapa.escala * (1 - apachurron / 3)), escalaBase, 0.16, (escala) => {
           ajolote.scale = escala;
         }, k.easings.easeOutQuad);
         // Abre y cierra la boca
@@ -1016,7 +1318,7 @@ k.scene("acuario", () => {
     datosJuego.salud = Math.min(100, datosJuego.salud + 5);
     datosJuego.comidasDadas++;
     if (!datosJuego.comidasProbadas.includes(bocado.tipo)) datosJuego.comidasProbadas.push(bocado.tipo);
-    mostrarMensaje("¡Ñam! Se comió " + bocado.nombre);
+    mostrarMensaje("¡Ñam! " + nombreAjolote() + " se comió " + bocado.nombre);
     revisarLogros();
   }
 
@@ -1075,7 +1377,7 @@ k.scene("acuario", () => {
     // Un tween es una animación de un valor a otro,
     // como una liga que se estira y regresa.
     // Aquí el ajolote se "aplasta" y rebota.
-    ajolote.tween(k.vec2(3.8, 2.4), ESCALA_3, 0.5, (escala) => {
+    ajolote.tween(k.vec2(etapa.escala * 1.27, etapa.escala * 0.8), escalaBase, 0.5, (escala) => {
       ajolote.scale = escala;
     }, k.easings.easeOutElastic);
   }
@@ -1165,9 +1467,37 @@ k.scene("acuario", () => {
     if (k.get("mancha").length < datosJuego.manchas) agregarMancha();
   }
 
-  // Si estuviste fuera un buen rato, te contamos cuánto
-  if (segundosFuera > 10 * 60) {
+  // Si estuviste fuera un buen rato, te contamos cuánto (solo la primera vez)
+  if (segundosFuera > 10 * 60 && !avisoAusenciaMostrado) {
     mostrarMensaje("Estuviste fuera " + formatoAusencia(segundosFuera));
+  }
+  avisoAusenciaMostrado = true;
+
+  // ¡CRECIÓ! (puede pasar jugando o mientras no estabas)
+  if (datosJuego.etapaVista !== etapaActual()) {
+    datosJuego.etapaVista = etapaActual();
+    guardarPartida();
+    celebrarCrecimiento();
+  }
+  function celebrarCrecimiento() {
+    const letrero = k.add([
+      k.text(nombreAjolote() + " creció:\n¡ahora es " + etapa.nombre.toLowerCase() + "!", { size: 22, align: "center" }),
+      k.pos(240, 120),
+      k.anchor("center"),
+      k.color(COLOR_DORADO),
+      k.opacity(1),
+      k.scale(0),
+      k.timer(),
+      k.lifespan(3.5, { fade: 0.6 }),
+      k.z(120),
+    ]);
+    letrero.tween(0, 1, 0.5, (t) => { letrero.scale = k.vec2(t); }, k.easings.easeOutBack);
+    // Lluvia de corazones (se ven una vez que el ajolote está listo)
+    k.wait(0.1, () => {
+      corazones.pos = ajolote.pos.add(0, -20);
+      corazones.emit(20);
+    });
+    tiempoFeliz = 3;
   }
 
   // --- TOCAR EL AGUA: el ajolote nada hacia ahí ---
@@ -1270,6 +1600,9 @@ k.scene("acuario", () => {
   const posTextoReloj = k.vec2(100, 41);
   const posTextoSaludos = k.vec2(290, 41);
   const posTextoDia = k.vec2(405, 41);
+  const posEtiqueta = k.vec2(PECERA.izq + 6, PECERA.arriba + 6);
+  const posTextoEtiqueta = k.vec2(PECERA.izq + 12, PECERA.arriba + 9);
+  const colorEtiqueta = k.rgb(20, 40, 60);
 
   k.add([
     k.z(100), // z alto = se dibuja encima de todo
@@ -1292,6 +1625,11 @@ k.scene("acuario", () => {
         });
         // Contador de días
         k.drawText({ text: "Día " + diasVivo(), pos: posTextoDia, size: 13, color: COLOR_DORADO });
+        // Nombre y etapa (esquina de la pecera). Te dice cuánto le falta para crecer.
+        const horas = horasParaCrecer();
+        const etiqueta = nombreAjolote() + " · " + etapa.nombre + (horas === null ? "" : "  (crece en " + horas + " h bien cuidado)");
+        k.drawRect({ pos: posEtiqueta, width: etiqueta.length * 6.6 + 12, height: 18, color: colorEtiqueta, opacity: 0.55, radius: 5 });
+        k.drawText({ text: etiqueta, pos: posTextoEtiqueta, size: 11, color: COLOR_TEXTO });
       },
     },
   ]);
@@ -1300,6 +1638,12 @@ k.scene("acuario", () => {
   k.onUpdate(() => {
     // El reloj real manda: ponerAlDia() baja la comida, el ánimo, etc.
     ponerAlDia();
+    // Si creció mientras mirabas, volvemos a entrar a la pecera
+    // (así se carga su dibujo nuevo y se hace la celebración)
+    if (!comiendo && datosJuego.etapaVista !== etapaActual()) {
+      k.go("acuario");
+      return;
+    }
     tiempoFeliz = Math.max(0, tiempoFeliz - k.dt());
     revisarMoneda();
     revisarManchas();
@@ -1367,11 +1711,12 @@ k.scene("jugar", () => {
   k.add([k.rect(480, 58), k.pos(0, 302), k.color(222, 196, 140), k.z(-1)]);
 
   // --- El ajolote (nada solo de lado a lado, abajo) ---
+  const etapa = ETAPAS[etapaActual()];
   const jugador = k.add([
-    k.sprite("ajolote", { anim: "nadar" }),
+    k.sprite(spriteAjolote(), { anim: "nadar" }),
     k.pos(240, 288),
     k.anchor("center"),
-    k.scale(3),
+    k.scale(etapa.escala),
     // scale en area() hace la zona de choque un poco más chica que el dibujo,
     // así se siente más justo cuando algo "casi" lo toca.
     k.area({ isSensor: true, scale: k.vec2(0.8, 0.6) }),
@@ -1379,7 +1724,7 @@ k.scene("jugar", () => {
   // Si trae sombrero, también juega con él puesto
   let sombrero = null;
   if (datosJuego.sombreroPuesto) {
-    sombrero = jugador.add([k.sprite(datosJuego.sombreroPuesto), k.pos(4, -3), k.anchor("bot")]);
+    sombrero = jugador.add([k.sprite(datosJuego.sombreroPuesto), k.pos(etapa.sombrero[0], etapa.sombrero[1]), k.anchor("bot")]);
   }
 
   // --- Controles: flechas, teclas 1/2 o tocar la pantalla ---
@@ -1399,7 +1744,7 @@ k.scene("jugar", () => {
     if (mover !== 0) jugador.flipX = mover < 0;
     if (sombrero) {
       sombrero.flipX = jugador.flipX;
-      sombrero.pos = jugador.flipX ? k.vec2(-4, -3) : k.vec2(4, -3);
+      sombrero.pos = k.vec2(jugador.flipX ? -etapa.sombrero[0] : etapa.sombrero[0], etapa.sombrero[1]);
     }
     // Cara feliz un ratito después de comer
     tiempoCaraFeliz = Math.max(0, tiempoCaraFeliz - k.dt());
@@ -1554,7 +1899,7 @@ k.scene("limpiar", () => {
     // Mientras más avanza el juego, menos tiempo se queda afuera
     const segundosAfuera = 1.5 - (SEGUNDOS_LIMPIA - tiempo) * 0.025;
     const cosa = k.add([
-      esAjolotito ? k.sprite("ajolote", { anim: "nadar" }) : k.sprite("basura"),
+      esAjolotito ? k.sprite("ajolote-rosa-larva", { anim: "nadar" }) : k.sprite("basura"),
       k.pos(lugar.pos),
       k.anchor("center"),
       k.scale(0),
@@ -1564,7 +1909,7 @@ k.scene("limpiar", () => {
     ]);
     lugar.cosa = cosa;
     // Sale con un "pop"
-    const tamano = esAjolotito ? 1.6 : 3.5;
+    const tamano = esAjolotito ? 2.8 : 3.5;
     cosa.tween(0, tamano, 0.15, (t) => { cosa.scale = k.vec2(t); }, k.easings.easeOutBack);
     // Si nadie la toca, se vuelve a hundir
     cosa.wait(segundosAfuera, () => {
@@ -1891,21 +2236,21 @@ k.scene("logros", () => {
     const columna = numero % 2;
     const fila = Math.floor(numero / 2);
     const tarjeta = k.add([
-      k.rect(226, 29, { radius: 6 }),
-      k.pos(10 + columna * 234, 56 + fila * 33),
+      k.rect(226, 27, { radius: 6 }),
+      k.pos(10 + columna * 234, 54 + fila * 29),
       k.color(ganado ? k.rgb(60, 45, 20) : k.rgb(40, 48, 66)),
       k.outline(2, ganado ? COLOR_DORADO : k.rgb(70, 80, 100)),
     ]);
     tarjeta.add([
       k.sprite("trofeo"),
-      k.pos(16, 14),
+      k.pos(16, 13),
       k.anchor("center"),
       k.scale(2),
       // color() multiplica el dibujo: gris oscuro = trofeo "apagado"
       k.color(ganado ? k.rgb(255, 255, 255) : k.rgb(70, 70, 80)),
     ]);
-    tarjeta.add([k.text(logro.nombre, { size: 12 }), k.pos(34, 3), k.color(ganado ? COLOR_DORADO : k.rgb(150, 160, 180))]);
-    tarjeta.add([k.text(logro.descripcion, { size: 9 }), k.pos(34, 17), k.color(ganado ? COLOR_TEXTO : k.rgb(120, 130, 150))]);
+    tarjeta.add([k.text(logro.nombre, { size: 11 }), k.pos(34, 2), k.color(ganado ? COLOR_DORADO : k.rgb(150, 160, 180))]);
+    tarjeta.add([k.text(logro.descripcion, { size: 9 }), k.pos(34, 15), k.color(ganado ? COLOR_TEXTO : k.rgb(120, 130, 150))]);
   });
 
   crearBoton("Volver (0)", 240, 336, 160, () => k.go("acuario"));
@@ -1997,8 +2342,8 @@ k.scene("tienda", () => {
 
 // ===== 10. ESCENA DE DESPEDIDA =====
 k.scene("despedida", () => {
-  k.add([k.sprite("ajolote", { anim: "triste" }), k.pos(240, 110), k.anchor("center"), k.scale(4)]);
-  k.add([k.text("Tu ajolote se enfermó...", { size: 26 }), k.pos(240, 190), k.anchor("center")]);
+  k.add([k.sprite(spriteAjolote(), { anim: "triste" }), k.pos(240, 110), k.anchor("center"), k.scale(ETAPAS[etapaActual()].escala * 1.4)]);
+  k.add([k.text(nombreAjolote() + " se enfermó...", { size: 26 }), k.pos(240, 190), k.anchor("center")]);
   k.add([
     k.text("En la vida real necesitan agua limpia y fría.", { size: 14, width: 440, align: "center" }),
     k.pos(240, 230),

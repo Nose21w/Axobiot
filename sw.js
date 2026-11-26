@@ -2,7 +2,7 @@
 // para que funcione SIN internet (como una app instalada).
 // 💡 Cada vez que cambies el juego, sube el número de versión
 // para que los celulares descarguen la nueva.
-const VERSION = "axobiot-v4";
+const VERSION = "axobiot-v5";
 const ARCHIVOS = [
   "./",
   "./index.html",

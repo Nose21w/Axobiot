@@ -29,6 +29,9 @@ Una vez abierto, funciona sin internet. Si cambias el juego, sube el número de
 En Android se bloquea en horizontal; en iPhone (que no lo permite) sale un aviso
 para girar el celular.
 
+- **Tu ajolote**: al empezar le pones **nombre** y eliges su **color** (leucístico, salvaje, dorado o melanoide, como los ajolotes de verdad).
+- **Crece**: nace como **larva**, a las 24 h bien cuidado pasa a **joven** y a los 3 días bien cuidado es **adulto**
+  (bien cuidado = con comida, agua limpia y ánimo). En la esquina de la pecera dice cuánto le falta.
 - **Toca el agua**: el ajolote nada hacia ahí.
 - **Burbuja**: el ajolote te muestra lo que necesita (comida, limpieza o cariño).
 - **1 / Comer**: suelta comida de ajolote: lombriz, gusano de sangre o artemia.
