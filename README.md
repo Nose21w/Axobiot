@@ -64,6 +64,13 @@ Si el navegador no puede leer un audio, el juego sigue funcionando sin él.
 - `click.wav`: "pop" de burbuja en botones y tarjetas. Lo generamos con código,
   así que no tiene licencia de nadie más.
 
+- `tema-minijuegos.mp3`: música de los minijuegos. Empieza al entrar al menú de
+  minijuegos, sigue en loop mientras juegas y se apaga al volver a la pecera.
+  Le pusimos un crossfade de 1.5 s entre el final y el principio para que el loop no brinque.
+  Pesa mucho para ir dentro de `main.js`: en el celular se carga del archivo, y en
+  **KAPLAYGROUND** hay que pegar `musica.js` en un archivo aparte (es opcional;
+  sin él, el juego funciona igual pero sin música).
+
 Para agregar otro: pon su audio al final de `main.js` en una función como
 `sonidoClickDatos()`, cárgalo con `cargarSonido("nombre", ...)` y tócalo con `sonar("nombre")`.
 

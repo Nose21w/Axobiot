@@ -719,13 +719,17 @@ for (const nombre in dibujosSimples) {
 const sonidosListos = {};
 let avisoAusenciaMostrado = false; // el "Estuviste fuera..." sale solo una vez
 
-async function cargarSonido(nombre, datos) {
+// "datos" puede ser el audio incrustado (data:...) o la ruta de un archivo.
+// Con recortar: true se quitan los silencios de las orillas
+// (el mp3 los agrega, y en un loop se oiría un huequito).
+async function cargarSonido(nombre, datos, { recortar = false } = {}) {
   try {
     const Contexto = window.AudioContext || window.webkitAudioContext;
     const contexto = new Contexto();
     const respuesta = await fetch(datos);
     const bytes = await respuesta.arrayBuffer();
-    const audio = await contexto.decodeAudioData(bytes);
+    let audio = await contexto.decodeAudioData(bytes);
+    if (recortar) audio = quitarSilencioOrillas(audio);
     contexto.close();
     k.loadSound(nombre, audio); // ya decodificado: no puede fallar
     sonidosListos[nombre] = true;
@@ -747,6 +751,65 @@ function sonarClick() {
 
 cargarSonido("comer", sonidoComerDatos()); // 1.5 s, 7 mordidas
 cargarSonido("click", sonidoClickDatos()); // "pop" de burbuja para botones
+
+// Quita el silencio del principio y del final de un audio ya decodificado
+function quitarSilencioOrillas(audio) {
+  const muestras = audio.getChannelData(0);
+  const casiNada = 0.0005;
+  let inicio = 0;
+  let fin = muestras.length - 1;
+  while (inicio < fin && Math.abs(muestras[inicio]) < casiNada) inicio++;
+  while (fin > inicio && Math.abs(muestras[fin]) < casiNada) fin--;
+  const largo = fin - inicio + 1;
+  const nuevo = new AudioBuffer({ length: largo, numberOfChannels: audio.numberOfChannels, sampleRate: audio.sampleRate });
+  for (let canal = 0; canal < audio.numberOfChannels; canal++) {
+    nuevo.copyToChannel(audio.getChannelData(canal).subarray(inicio, fin + 1), canal);
+  }
+  return nuevo;
+}
+
+// ===== 5c. MÚSICA DE LOS MINIJUEGOS =====
+// Empieza al entrar al menú de minijuegos, sigue sonando (en loop) mientras
+// juegas y cambias de minijuego, y se detiene al volver a la pecera.
+//
+// La canción pesa mucho para ir dentro de este archivo, así que se busca:
+//   1. En la función temaMinijuegosDatos() del archivo musica.js
+//      (para KAPLAYGROUND: pégalo en un archivo aparte, es opcional).
+//   2. Si no está, en el archivo sonidos/tema-minijuegos.mp3 (versión del celular).
+// Si no encuentra ninguna, el juego funciona igual, sin música.
+const VOLUMEN_MUSICA = 0.45;
+let musicaMinijuegos = null;   // la canción sonando (o null)
+let quiereMusica = false;      // ¿estamos en los minijuegos?
+let musicaCargando = false;
+
+async function cargarMusicaMinijuegos() {
+  if (musicaCargando) return; // solo se carga una vez
+  musicaCargando = true;
+  const datos = typeof temaMinijuegosDatos === "function"
+    ? temaMinijuegosDatos()
+    : "sonidos/tema-minijuegos.mp3";
+  await cargarSonido("temaMinijuegos", datos, { recortar: true });
+  // Si ya entraste a los minijuegos mientras cargaba, que empiece
+  if (quiereMusica) empezarMusicaMinijuegos();
+}
+
+function empezarMusicaMinijuegos() {
+  quiereMusica = true;
+  if (!sonidosListos.temaMinijuegos) {
+    cargarMusicaMinijuegos();
+    return;
+  }
+  if (musicaMinijuegos) return; // ya está sonando: que siga, no la reiniciamos
+  musicaMinijuegos = k.play("temaMinijuegos", { loop: true, volume: VOLUMEN_MUSICA });
+}
+
+function detenerMusicaMinijuegos() {
+  quiereMusica = false;
+  if (musicaMinijuegos) {
+    musicaMinijuegos.stop();
+    musicaMinijuegos = null;
+  }
+}
 // En qué segundo suena cada mordida y qué tan fuerte (0 a 1).
 // Los medimos del audio: así la animación va al RITMO del sonido.
 const MORDIDAS = [
@@ -952,6 +1015,7 @@ function mostrarAvisoLogro(logro) {
 // Una escena es como un cuarto de una casa:
 // cada cuarto tiene sus propias cosas.
 k.scene("inicio", () => {
+  detenerMusicaMinijuegos();
   k.add([k.text("AXOBIOT", { size: 48 }), k.pos(240, 80), k.anchor("center"), k.color(255, 173, 198)]);
   // Si ya tienes ajolote, sale TU ajolote; si no, uno rosa
   const tieneAjolote = datosJuego.nombre && datosJuego.salud > 0;
@@ -1125,6 +1189,8 @@ k.scene("nuevoAjolote", () => {
 
 // ===== 8. ESCENA DEL ACUARIO (juego principal) =====
 k.scene("acuario", () => {
+  detenerMusicaMinijuegos(); // al volver a la pecera, se apaga
+  cargarMusicaMinijuegos();  // la vamos cargando para que esté lista al jugar
 
   // --- Fondo de la pecera ---
   // ⚡ OPTIMIZACIÓN: en vez de crear muchos objetos (agua, arena,
@@ -1727,6 +1793,7 @@ function premiarMinijuego({ titulo, resultado, monedas, nuevoRecord }) {
 // Mueve al ajolote para atrapar lombrices, gusanos y artemias.
 // ¡Esquiva la basura! Cada 10 bocados ganas 1 moneda.
 k.scene("jugar", () => {
+  empezarMusicaMinijuegos(); // si ya suena, sigue sonando
   let puntos = 0;
   let vidas = VIDAS_MINIJUEGO;
   let tiempo = SEGUNDOS_MINIJUEGO;
@@ -1878,6 +1945,7 @@ k.scene("jugar", () => {
 // (tocándola o con las teclas 1 a 9, acomodadas como en el teclado numérico).
 // ¡Cuidado! A veces sale un ajolotito: a ese NO lo toques.
 k.scene("limpiar", () => {
+  empezarMusicaMinijuegos(); // si ya suena, sigue sonando
   let puntos = 0;
   let vidas = VIDAS_LIMPIA;
   let tiempo = SEGUNDOS_LIMPIA;
@@ -2035,6 +2103,7 @@ k.scene("limpiar", () => {
 // Voltea las tarjetas de dos en dos y encuentra las parejas.
 // Se juega tocando, o con las flechas + ESPACIO.
 k.scene("memorama", () => {
+  empezarMusicaMinijuegos(); // si ya suena, sigue sonando
   // Los dibujos del memorama (cada uno sale 2 veces)
   const DIBUJOS = ["lombriz", "gusanoSangre", "artemia", "moneda", "corazon", "corona"].slice(0, PAREJAS_MEMORAMA);
 
@@ -2205,6 +2274,7 @@ const MINIJUEGOS = [
 ];
 
 k.scene("minijuegos", () => {
+  empezarMusicaMinijuegos(); // si ya suena, sigue sonando
   k.add([k.text("MINIJUEGOS", { size: 30 }), k.pos(240, 26), k.anchor("center"), k.color(COLOR_DORADO)]);
   k.add([
     k.text("Jugar sube el ánimo (+" + ANIMO_POR_JUGAR + ") pero da hambre (-" + COMIDA_QUE_GASTA_JUGAR + ")", { size: 12 }),
@@ -2376,6 +2446,7 @@ k.scene("tienda", () => {
 
 // ===== 10. ESCENA DE DESPEDIDA =====
 k.scene("despedida", () => {
+  detenerMusicaMinijuegos();
   k.add([k.sprite(spriteAjolote(), { anim: "triste" }), k.pos(240, 110), k.anchor("center"), k.scale(ETAPAS[etapaActual()].escala * 1.4)]);
   k.add([k.text(nombreAjolote() + " se enfermó...", { size: 26 }), k.pos(240, 190), k.anchor("center")]);
   k.add([
