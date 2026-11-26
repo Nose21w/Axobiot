@@ -67,9 +67,10 @@ Si el navegador no puede leer un audio, el juego sigue funcionando sin él.
 - `tema-minijuegos.mp3`: música de los minijuegos. Empieza al entrar al menú de
   minijuegos, sigue en loop mientras juegas y se apaga al volver a la pecera.
   Le pusimos un crossfade de 1.5 s entre el final y el principio para que el loop no brinque.
-  Pesa mucho para ir dentro de `main.js`: en el celular se carga del archivo, y en
-  **KAPLAYGROUND** hay que pegar `musica.js` en un archivo aparte (es opcional;
-  sin él, el juego funciona igual pero sin música).
+  Pesa mucho para ir dentro de `main.js`, así que se busca en orden: `musica.js`
+  (opcional, pegado aparte), el archivo `sonidos/tema-minijuegos.mp3` (celular) y,
+  si no, se descarga directo de este repositorio de GitHub (así en **KAPLAYGROUND**
+  basta con `main.js`, con internet). Sin ninguna, el juego funciona sin música.
 
 Para agregar otro: pon su audio al final de `main.js` en una función como
 `sonidoClickDatos()`, cárgalo con `cargarSonido("nombre", ...)` y tócalo con `sonar("nombre")`.

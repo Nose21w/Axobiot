@@ -736,23 +736,36 @@ for (const nombre in dibujosSimples) {
 const sonidosListos = {};
 let avisoAusenciaMostrado = false; // el "Estuviste fuera..." sale solo una vez
 
-// "datos" puede ser el audio incrustado (data:...) o la ruta de un archivo.
+// "fuentes" puede ser UNA fuente o una LISTA: se prueban en orden hasta
+// que una funcione. Cada fuente es el audio incrustado (data:...) o una ruta/link.
 // Con recortar: true se quitan los silencios de las orillas
 // (el mp3 los agrega, y en un loop se oiría un huequito).
-async function cargarSonido(nombre, datos, { recortar = false } = {}) {
-  try {
+// Devuelve true si se cargó.
+async function cargarSonido(nombre, fuentes, { recortar = false } = {}) {
+  const lista = (Array.isArray(fuentes) ? fuentes : [fuentes]).filter(Boolean);
+  const problemas = [];
+  for (const fuente of lista) {
     const Contexto = window.AudioContext || window.webkitAudioContext;
     const contexto = new Contexto();
-    const respuesta = await fetch(datos);
-    const bytes = await respuesta.arrayBuffer();
-    let audio = await contexto.decodeAudioData(bytes);
-    if (recortar) audio = quitarSilencioOrillas(audio);
-    contexto.close();
-    k.loadSound(nombre, audio); // ya decodificado: no puede fallar
-    sonidosListos[nombre] = true;
-  } catch (error) {
-    console.warn("No se pudo cargar el sonido '" + nombre + "'. El juego sigue sin él.", error);
+    try {
+      const respuesta = await fetch(fuente);
+      if (!respuesta.ok) throw new Error("no se encontró el archivo (" + respuesta.status + ")");
+      const bytes = await respuesta.arrayBuffer();
+      let audio = await contexto.decodeAudioData(bytes);
+      if (recortar) audio = quitarSilencioOrillas(audio);
+      k.loadSound(nombre, audio); // ya decodificado: no puede fallar
+      sonidosListos[nombre] = true;
+      return true;
+    } catch (error) {
+      // Guardamos el motivo en texto (si no, la consola solo muestra {})
+      const cual = fuente.startsWith("data:") ? "audio incrustado" : fuente;
+      problemas.push(cual + " → " + ((error && (error.message || error.name)) || String(error)));
+    } finally {
+      contexto.close();
+    }
   }
+  console.warn("No se pudo cargar el sonido '" + nombre + "'. El juego sigue sin él.\n" + problemas.join("\n"));
+  return false;
 }
 
 // Toca un sonido SOLO si se pudo cargar (si no, no pasa nada)
@@ -789,24 +802,36 @@ function quitarSilencioOrillas(audio) {
 // Empieza al entrar al menú de minijuegos, sigue sonando (en loop) mientras
 // juegas y cambias de minijuego, y se detiene al volver a la pecera.
 //
-// La canción pesa mucho para ir dentro de este archivo, así que se busca:
-//   1. En la función temaMinijuegosDatos() del archivo musica.js
-//      (para KAPLAYGROUND: pégalo en un archivo aparte, es opcional).
-//   2. Si no está, en el archivo sonidos/tema-minijuegos.mp3 (versión del celular).
-// Si no encuentra ninguna, el juego funciona igual, sin música.
+// La canción pesa mucho para ir dentro de este archivo, así que se busca
+// en varios lugares (ver MUSICA_EN_GITHUB y cargarMusicaMinijuegos abajo).
+// Si no encuentra ninguno, el juego funciona igual, sin música.
 const VOLUMEN_MUSICA = 0.45;
 let musicaMinijuegos = null;   // la canción sonando (o null)
 let quiereMusica = false;      // ¿estamos en los minijuegos?
 let musicaCargando = false;
 
+// Dónde buscar la canción, en orden:
+//   1. musica.js pegado aparte (opcional, sirve sin internet en KAPLAYGROUND)
+//   2. el archivo junto al juego (versión del celular / GitHub Pages)
+//   3. directo del repositorio de GitHub (así KAPLAYGROUND la tiene sin pegar nada;
+//      necesita internet). El número largo es la versión exacta del archivo.
+const MUSICA_EN_GITHUB = [
+  "https://raw.githubusercontent.com/Nose21w/Axobiot/399927d1f1cf87c2cc11d3de5ecb8a329829f5ce/sonidos/tema-minijuegos.mp3",
+  "https://cdn.jsdelivr.net/gh/Nose21w/Axobiot@399927d1f1cf87c2cc11d3de5ecb8a329829f5ce/sonidos/tema-minijuegos.mp3",
+];
+
 async function cargarMusicaMinijuegos() {
   if (musicaCargando) return; // solo se carga una vez
   musicaCargando = true;
   // globalThis = "lo que es visible desde todos los archivos"
-  const datos = typeof globalThis.temaMinijuegosDatos === "function"
+  const pegada = typeof globalThis.temaMinijuegosDatos === "function"
     ? globalThis.temaMinijuegosDatos()
-    : "sonidos/tema-minijuegos.mp3";
-  await cargarSonido("temaMinijuegos", datos, { recortar: true });
+    : null;
+  await cargarSonido("temaMinijuegos", [
+    pegada,
+    "sonidos/tema-minijuegos.mp3",
+    ...MUSICA_EN_GITHUB,
+  ], { recortar: true });
   // Si ya entraste a los minijuegos mientras cargaba, que empiece
   if (quiereMusica) empezarMusicaMinijuegos();
 }
