@@ -43,9 +43,14 @@ para girar el celular.
 
 ## Comer
 
-Al comer suena `sonidos/comer.mp3` (1.5 s) y la comida se va achicando en
+Al comer suena un audio de 1.5 s y la comida se va achicando en
 7 mordidas, al ritmo del sonido. Los tiempos de cada mordida están en
 `MORDIDAS` en `main.js`: si cambias el audio, cámbialos también.
+
+El audio va **dentro de `main.js`** (función `sonidoComerDatos()`, al final),
+así que basta copiar `main.js` para que suene, también en KAPLAYGROUND.
+El archivo original está en `sonidos/comer.mp3`. Si el navegador no puede
+leer el audio, el juego sigue funcionando sin sonido.
 
 ## El tiempo pasa aunque no juegues
 
