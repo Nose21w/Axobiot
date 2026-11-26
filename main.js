@@ -43,6 +43,23 @@ const k = kaplay({
   narrowPhaseCollisionAlgorithm: "box",
 });
 
+// ===== 1b. DESPERTAR EL AUDIO =====
+// Los navegadores no dejan sonar nada hasta que el jugador toca la pantalla,
+// da click o presiona una tecla: el audio empieza "dormido" (suspended).
+// KAPLAY solo lo despierta para la música en streaming (loadMusic),
+// NO para los sonidos normales (loadSound), así que lo despertamos nosotros.
+// ⚠️ Sin esto, en una compu o celular normal NO se escucha ningún sonido.
+function despertarAudio() {
+  if (k.audioCtx.state !== "running") {
+    k.audioCtx.resume().catch(() => {});
+  }
+}
+// "true" = escuchamos el evento antes que nadie. Se queda siempre activo
+// por si el celular vuelve a dormir el audio (por ejemplo, al recibir una llamada).
+for (const evento of ["pointerdown", "pointerup", "touchend", "keydown", "click"]) {
+  window.addEventListener(evento, despertarAudio, true);
+}
+
 // ===== 2. DATOS DEL JUEGO =====
 // Las necesidades del ajolote viven en un objeto simple, como una libreta.
 // Así no se borran al cambiar de escena.
@@ -785,8 +802,9 @@ let musicaCargando = false;
 async function cargarMusicaMinijuegos() {
   if (musicaCargando) return; // solo se carga una vez
   musicaCargando = true;
-  const datos = typeof temaMinijuegosDatos === "function"
-    ? temaMinijuegosDatos()
+  // globalThis = "lo que es visible desde todos los archivos"
+  const datos = typeof globalThis.temaMinijuegosDatos === "function"
+    ? globalThis.temaMinijuegosDatos()
     : "sonidos/tema-minijuegos.mp3";
   await cargarSonido("temaMinijuegos", datos, { recortar: true });
   // Si ya entraste a los minijuegos mientras cargaba, que empiece
