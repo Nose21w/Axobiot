@@ -74,7 +74,9 @@ const datosJuego = {
   comidasProbadas: [],        // qué tipos de comida ha probado
   saludosTotales: 0,
   monedasRecogidas: 0,
-  mejorMinijuego: 0,          // récord de bocados en el minijuego
+  mejorMinijuego: 0,          // récord de bocados en "Atrapa la comida"
+  mejorLimpia: 0,             // récord de basura sacada en "Limpia el canal"
+  mejorMemorama: 0,           // récord de "Memorama" (menos movimientos = mejor; 0 = sin récord)
   minijuegoPerfecto: false,   // ¿terminó el minijuego sin tocar basura?
 };
 
@@ -111,6 +113,19 @@ const PUNTOS_POR_MONEDA = 10;     // cada 10 bocados atrapados = 1 moneda
 const COMIDA_PARA_JUGAR = 20;     // necesita al menos esta comida para jugar
 const COMIDA_QUE_GASTA_JUGAR = 10; // jugar da hambre
 const ANIMO_POR_JUGAR = 25;       // jugar lo pone contento
+
+// Minijuego "Limpia el canal"
+const SEGUNDOS_LIMPIA = 30;
+const VIDAS_LIMPIA = 3;
+const BASURAS_POR_MONEDA = 8;     // cada 8 basuras = 1 moneda
+
+// Minijuego "Memorama": monedas según cuántos movimientos usaste
+const PAREJAS_MEMORAMA = 6;
+function monedasMemorama(movimientos) {
+  if (movimientos <= 10) return 3;
+  if (movimientos <= 14) return 2;
+  return 1;
+}
 
 // 💡 Para PROBAR rápido, cambia VELOCIDAD_DEL_TIEMPO a 60:
 // así 1 minuto real = 1 hora del juego. Antes de entregar, regrésalo a 1.
@@ -713,10 +728,14 @@ const LOGROS = [
     cumple: () => datosJuego.sombreroPuesto !== null },
   { id: "decorador", nombre: "Decorador", descripcion: "Pon 3 decoraciones",
     cumple: () => datosJuego.decoracionesPuestas.length >= 3 },
-  { id: "cazador", nombre: "Cazador", descripcion: "Atrapa 20 bocados en el minijuego",
+  { id: "cazador", nombre: "Cazador", descripcion: "20 bocados en Atrapa la comida",
     cumple: () => datosJuego.mejorMinijuego >= 20 },
   { id: "ceroBasura", nombre: "Cero basura", descripcion: "Minijuego sin tocar basura",
     cumple: () => datosJuego.minijuegoPerfecto },
+  { id: "guardian", nombre: "Guardián del canal", descripcion: "Saca 25 basuras en Limpia el canal",
+    cumple: () => datosJuego.mejorLimpia >= 25 },
+  { id: "memoria", nombre: "Buena memoria", descripcion: "Memorama en 10 movimientos o menos",
+    cumple: () => datosJuego.mejorMemorama > 0 && datosJuego.mejorMemorama <= 10 },
   { id: "dia3", nombre: "3 días juntos", descripcion: "Cuídalo hasta el día 3",
     cumple: () => diasVivo() >= 3 },
   { id: "dia7", nombre: "Una semana", descripcion: "Cuídalo hasta el día 7",
@@ -1232,13 +1251,9 @@ k.scene("acuario", () => {
   botonLogros.onClick(() => k.go("logros"));
   k.onKeyPress("5", () => k.go("logros"));
 
-  // Jugar da hambre: si tiene mucha hambre, primero que coma
+  // Abre el menú de minijuegos (ahí se revisa si tiene hambre)
   function irAJugar() {
-    if (datosJuego.alimentado < COMIDA_PARA_JUGAR) {
-      mostrarMensaje("Tiene hambre. ¡Primero dale de comer!");
-      return;
-    }
-    k.go("jugar");
+    k.go("minijuegos");
   }
 
   // --- Barras de necesidades (arriba) ---
@@ -1307,6 +1322,35 @@ k.scene("acuario", () => {
     }
   });
 });
+
+// ===== 8a. PREMIO DE LOS MINIJUEGOS =====
+// Todos los minijuegos terminan igual: dan monedas, suben el ánimo,
+// bajan la comida y muestran un panel. Por eso es UNA sola función.
+function premiarMinijuego({ titulo, resultado, monedas, nuevoRecord }) {
+  datosJuego.monedas += monedas;
+  datosJuego.animo = Math.min(100, datosJuego.animo + ANIMO_POR_JUGAR);
+  datosJuego.alimentado = Math.max(0, datosJuego.alimentado - COMIDA_QUE_GASTA_JUGAR);
+  guardarPartida();
+  revisarLogros();
+
+  const panel = k.add([
+    k.rect(340, 210, { radius: 12 }),
+    k.pos(240, 175),
+    k.anchor("center"),
+    k.color(40, 60, 90),
+    k.outline(3, k.rgb(120, 160, 210)),
+    // Sin z(): como se agrega al final, ya se dibuja encima.
+    // (En v4000, si le pones z al papá, sus hijos de texto quedan atrás)
+  ]);
+  panel.add([k.text(titulo, { size: 20 }), k.pos(0, -78), k.anchor("center"), k.color(COLOR_DORADO)]);
+  panel.add([k.text(resultado, { size: 16 }), k.pos(0, -46), k.anchor("center")]);
+  if (nuevoRecord) {
+    panel.add([k.text("¡Nuevo récord!", { size: 14 }), k.pos(0, -24), k.anchor("center"), k.color(255, 150, 190)]);
+  }
+  panel.add([k.text("Monedas: +" + monedas, { size: 16 }), k.pos(0, 0), k.anchor("center"), k.color(COLOR_DORADO)]);
+  panel.add([k.text("Ánimo: +" + ANIMO_POR_JUGAR + "   Comida: -" + COMIDA_QUE_GASTA_JUGAR, { size: 14 }), k.pos(0, 24), k.anchor("center")]);
+  crearBoton("Volver (0)", 240, 245, 160, () => k.go("minijuegos"));
+}
 
 // ===== 8b. MINIJUEGO: ATRAPA LA COMIDA =====
 // Mueve al ajolote para atrapar lombrices, gusanos y artemias.
@@ -1439,39 +1483,399 @@ k.scene("jugar", () => {
     relojCaida.cancel();
     for (const cosa of [...k.get("comidaQueCae"), ...k.get("basura")]) cosa.destroy();
 
-    const monedasGanadas = Math.floor(puntos / PUNTOS_POR_MONEDA);
-    datosJuego.monedas += monedasGanadas;
+    const nuevoRecord = puntos > datosJuego.mejorMinijuego;
     datosJuego.mejorMinijuego = Math.max(datosJuego.mejorMinijuego, puntos);
     // Perfecto = se acabó el tiempo sin tocar nada de basura
     if (vidas === VIDAS_MINIJUEGO) datosJuego.minijuegoPerfecto = true;
-    datosJuego.animo = Math.min(100, datosJuego.animo + ANIMO_POR_JUGAR);
-    datosJuego.alimentado = Math.max(0, datosJuego.alimentado - COMIDA_QUE_GASTA_JUGAR);
-    guardarPartida();
-
-    revisarLogros();
-
-    const panel = k.add([
-      k.rect(320, 190, { radius: 12 }),
-      k.pos(240, 175),
-      k.anchor("center"),
-      k.color(40, 60, 90),
-      k.outline(3, k.rgb(120, 160, 210)),
-      // Sin z(): como se agrega al final, ya se dibuja encima.
-      // (En v4000, si le pones z al papá, sus hijos de texto quedan atrás)
-    ]);
-    panel.add([k.text(vidas <= 0 ? "¡Mucha basura!" : "¡Se acabó el tiempo!", { size: 22 }), k.pos(0, -65), k.anchor("center"), k.color(COLOR_DORADO)]);
-    panel.add([k.text("Atrapaste " + puntos + " bocados", { size: 16 }), k.pos(0, -30), k.anchor("center")]);
-    panel.add([k.text("Monedas: +" + monedasGanadas, { size: 16 }), k.pos(0, -5), k.anchor("center"), k.color(COLOR_DORADO)]);
-    panel.add([k.text("Ánimo: +" + ANIMO_POR_JUGAR + "   Comida: -" + COMIDA_QUE_GASTA_JUGAR, { size: 14 }), k.pos(0, 20), k.anchor("center")]);
-    crearBoton("Volver (0)", 240, 235, 160, () => k.go("acuario"));
+    premiarMinijuego({
+      titulo: vidas <= 0 ? "¡Mucha basura!" : "¡Se acabó el tiempo!",
+      resultado: "Atrapaste " + puntos + " bocados",
+      monedas: Math.floor(puntos / PUNTOS_POR_MONEDA),
+      nuevoRecord,
+    });
   }
 
   // Salir: si sales antes de terminar, no hay premio
+  k.onKeyPress("0", () => k.go("minijuegos"));
+  k.onKeyPress("escape", () => k.go("minijuegos"));
+});
+
+// ===== 8c. MINIJUEGO: LIMPIA EL CANAL =====
+// En Xochimilco, donde viven los ajolotes salvajes, la basura en los canales
+// es uno de sus peores problemas. Saca la basura que sale en 9 lugares del agua
+// (tocándola o con las teclas 1 a 9, acomodadas como en el teclado numérico).
+// ¡Cuidado! A veces sale un ajolotito: a ese NO lo toques.
+k.scene("limpiar", () => {
+  let puntos = 0;
+  let vidas = VIDAS_LIMPIA;
+  let tiempo = SEGUNDOS_LIMPIA;
+  let terminado = false;
+
+  // --- Fondo: canal ---
+  k.add([k.rect(480, 262), k.pos(0, 40), k.color(70, 120, 110), k.z(-1)]);
+  k.add([k.rect(480, 58), k.pos(0, 302), k.color(120, 100, 70), k.z(-1)]);
+
+  // --- Los 9 lugares, acomodados como el teclado numérico ---
+  //   7 8 9
+  //   4 5 6
+  //   1 2 3
+  const TECLAS = ["7", "8", "9", "4", "5", "6", "1", "2", "3"];
+  const lugares = TECLAS.map((tecla, i) => ({
+    tecla,
+    pos: k.vec2(120 + (i % 3) * 120, 100 + Math.floor(i / 3) * 80),
+    cosa: null, // lo que está saliendo ahí (o null si está vacío)
+  }));
+
+  // Dibujamos los 9 lugares como círculos de agua con su número
+  const colorLugar = k.rgb(90, 150, 140);
+  const colorNumero = k.rgb(150, 200, 190);
+  const posNumero = k.vec2(0, 0);
+  k.add([
+    k.z(0),
+    {
+      draw() {
+        for (const lugar of lugares) {
+          k.drawCircle({ pos: lugar.pos, radius: 34, color: colorLugar, opacity: 0.6 });
+          posNumero.x = lugar.pos.x + 26;
+          posNumero.y = lugar.pos.y + 18;
+          k.drawText({ text: lugar.tecla, pos: posNumero, size: 12, color: colorNumero, anchor: "center" });
+        }
+      },
+    },
+  ]);
+
+  // --- Que salga algo en un lugar vacío ---
+  function sacarAlgo() {
+    if (terminado) return;
+    const vacios = lugares.filter((lugar) => !lugar.cosa);
+    if (vacios.length === 0) return;
+    const lugar = k.choose(vacios);
+    const esAjolotito = k.rand() < 0.2; // 1 de cada 5 es un ajolotito
+    // Mientras más avanza el juego, menos tiempo se queda afuera
+    const segundosAfuera = 1.5 - (SEGUNDOS_LIMPIA - tiempo) * 0.025;
+    const cosa = k.add([
+      esAjolotito ? k.sprite("ajolote", { anim: "nadar" }) : k.sprite("basura"),
+      k.pos(lugar.pos),
+      k.anchor("center"),
+      k.scale(0),
+      k.timer(),
+      k.z(10),
+      { esAjolotito },
+    ]);
+    lugar.cosa = cosa;
+    // Sale con un "pop"
+    const tamano = esAjolotito ? 1.6 : 3.5;
+    cosa.tween(0, tamano, 0.15, (t) => { cosa.scale = k.vec2(t); }, k.easings.easeOutBack);
+    // Si nadie la toca, se vuelve a hundir
+    cosa.wait(segundosAfuera, () => {
+      if (lugar.cosa === cosa) lugar.cosa = null;
+      cosa.tween(tamano, 0, 0.12, (t) => { cosa.scale = k.vec2(t); }).onEnd(() => cosa.destroy());
+    });
+  }
+  // Cada vez sale más seguido
+  function programarSiguiente() {
+    if (terminado) return;
+    sacarAlgo();
+    k.wait(Math.max(0.4, 0.85 - (SEGUNDOS_LIMPIA - tiempo) * 0.015), programarSiguiente);
+  }
+  k.wait(1.5, programarSiguiente); // tiempo para leer las instrucciones
+
+  // --- Tocar un lugar (con el dedo/mouse o con su tecla) ---
+  function tocarLugar(lugar) {
+    if (terminado || !lugar.cosa) return;
+    const cosa = lugar.cosa;
+    lugar.cosa = null;
+    cosa.destroy();
+    if (cosa.esAjolotito) {
+      vidas--;
+      k.shake(6);
+      k.add(crearTextoFlotante("¡Es un ajolotito!", lugar.pos.x, lugar.pos.y - 30, k.rgb(255, 150, 180)));
+      if (vidas <= 0) terminar();
+    } else {
+      puntos++;
+      k.add(crearTextoFlotante("+1", lugar.pos.x, lugar.pos.y - 30, COLOR_DORADO));
+    }
+  }
+  k.onMousePress(() => {
+    const punto = k.mousePos();
+    const lugar = lugares.find((l) => l.pos.dist(punto) < 38);
+    if (lugar) tocarLugar(lugar);
+  });
+  for (const lugar of lugares) {
+    k.onKeyPress(lugar.tecla, () => tocarLugar(lugar));
+  }
+
+  // --- Reloj ---
+  k.onUpdate(() => {
+    if (terminado) return;
+    tiempo -= k.dt();
+    if (tiempo <= 0) terminar();
+  });
+
+  // --- Marcador ---
+  const posCorazon = k.vec2(0, 12);
+  const posPuntos = k.vec2(14, 12);
+  const posTiempo = k.vec2(190, 12);
+  k.add([
+    k.z(100),
+    {
+      draw() {
+        k.drawText({ text: "Basura: " + puntos, pos: posPuntos, size: 16, color: COLOR_TEXTO });
+        k.drawText({ text: "Tiempo: " + Math.max(0, Math.ceil(tiempo)), pos: posTiempo, size: 16, color: COLOR_TEXTO });
+        for (let i = 0; i < vidas; i++) {
+          posCorazon.x = 400 + i * 24;
+          k.drawSprite({ sprite: "corazon", pos: posCorazon, scale: ESCALA_3 });
+        }
+      },
+    },
+  ]);
+  k.add([
+    k.text("Toca la basura (o su número)\n¡No toques a los ajolotitos!", { size: 15, align: "center" }),
+    k.pos(240, 330),
+    k.anchor("center"),
+    k.opacity(1),
+    k.lifespan(3, { fade: 0.5 }),
+    k.z(100),
+  ]);
+
+  function terminar() {
+    if (terminado) return;
+    terminado = true;
+    for (const lugar of lugares) {
+      if (lugar.cosa) lugar.cosa.destroy();
+      lugar.cosa = null;
+    }
+    const nuevoRecord = puntos > datosJuego.mejorLimpia;
+    datosJuego.mejorLimpia = Math.max(datosJuego.mejorLimpia, puntos);
+    premiarMinijuego({
+      titulo: vidas <= 0 ? "¡Cuidado con los ajolotitos!" : "¡Canal más limpio!",
+      resultado: "Sacaste " + puntos + " basuras",
+      monedas: Math.floor(puntos / BASURAS_POR_MONEDA),
+      nuevoRecord,
+    });
+  }
+
+  k.onKeyPress("0", () => k.go("minijuegos"));
+  k.onKeyPress("escape", () => k.go("minijuegos"));
+});
+
+// ===== 8d. MINIJUEGO: MEMORAMA =====
+// Voltea las tarjetas de dos en dos y encuentra las parejas.
+// Se juega tocando, o con las flechas + ESPACIO.
+k.scene("memorama", () => {
+  // Los dibujos del memorama (cada uno sale 2 veces)
+  const DIBUJOS = ["lombriz", "gusanoSangre", "artemia", "moneda", "corazon", "corona"].slice(0, PAREJAS_MEMORAMA);
+
+  // Revolver las tarjetas (algoritmo de Fisher-Yates):
+  // de atrás para adelante, cambiamos cada tarjeta con una al azar.
+  const mazo = [...DIBUJOS, ...DIBUJOS];
+  for (let i = mazo.length - 1; i > 0; i--) {
+    const j = Math.floor(k.rand(0, i + 1));
+    [mazo[i], mazo[j]] = [mazo[j], mazo[i]];
+  }
+
+  let movimientos = 0;
+  let parejas = 0;
+  let primera = null;      // primera tarjeta volteada del turno
+  let esperando = false;   // mientras se voltean de regreso, no se puede tocar
+  let seleccion = 0;       // tarjeta elegida con el teclado
+  let usaTeclado = false;  // el marco solo aparece si usas las flechas
+
+  const COLUMNAS = 4;
+  const colorTapa = k.rgb(40, 60, 90);
+  const colorCara = k.rgb(230, 240, 250);
+  const colorPareja = k.rgb(170, 225, 190);
+
+  const tarjetas = mazo.map((dibujo, i) => {
+    const tarjeta = k.add([
+      k.rect(72, 80, { radius: 8 }),
+      k.pos(111 + (i % COLUMNAS) * 86, 100 + Math.floor(i / COLUMNAS) * 92),
+      k.anchor("center"),
+      k.color(colorTapa),
+      k.outline(3, k.rgb(120, 160, 210)),
+      k.scale(1),
+      k.area(),
+      k.timer(),
+      { dibujo, volteada: false, encontrada: false },
+    ]);
+    // Hijos: el dibujo (escondido) y el signo de pregunta
+    tarjeta.icono = tarjeta.add([k.sprite(dibujo), k.anchor("center"), k.scale(3), k.opacity(0)]);
+    tarjeta.signo = tarjeta.add([k.text("?", { size: 32 }), k.anchor("center"), k.color(120, 160, 210), k.opacity(1)]);
+    tarjeta.onClick(() => {
+      usaTeclado = false;
+      voltear(tarjeta);
+    });
+    return tarjeta;
+  });
+
+  // Animación de voltear: se "aplasta" de lado, cambia de cara y se abre
+  function animarVolteo(tarjeta, mostrarCara) {
+    tarjeta.tween(1, 0, 0.1, (x) => { tarjeta.scale = k.vec2(x, 1); }).onEnd(() => {
+      tarjeta.volteada = mostrarCara;
+      tarjeta.icono.opacity = mostrarCara ? 1 : 0;
+      tarjeta.signo.opacity = mostrarCara ? 0 : 1;
+      tarjeta.color = mostrarCara ? colorCara : colorTapa;
+      tarjeta.tween(0, 1, 0.1, (x) => { tarjeta.scale = k.vec2(x, 1); });
+    });
+  }
+
+  function voltear(tarjeta) {
+    if (esperando || tarjeta.volteada || tarjeta.encontrada || tarjeta === primera) return;
+    animarVolteo(tarjeta, true);
+    if (!primera) {
+      primera = tarjeta;
+      return;
+    }
+    // Es la segunda tarjeta del turno
+    movimientos++;
+    const segunda = tarjeta;
+    if (primera.dibujo === segunda.dibujo) {
+      // ¡Pareja!
+      primera.encontrada = true;
+      segunda.encontrada = true;
+      const par = [primera, segunda];
+      primera = null;
+      parejas++;
+      k.wait(0.25, () => {
+        for (const t of par) t.color = colorPareja;
+        k.add(crearTextoFlotante("¡Pareja!", segunda.pos.x, segunda.pos.y - 50, COLOR_DORADO));
+      });
+      if (parejas === PAREJAS_MEMORAMA) k.wait(0.8, terminar);
+    } else {
+      // No son iguales: se voltean de regreso después de un momento
+      esperando = true;
+      const par = [primera, segunda];
+      primera = null;
+      k.wait(0.8, () => {
+        for (const t of par) animarVolteo(t, false);
+        esperando = false;
+      });
+    }
+  }
+
+  // --- Teclado: flechas para moverte, ESPACIO o ENTER para voltear ---
+  function mover(columnas, filas) {
+    usaTeclado = true;
+    const columna = (seleccion % COLUMNAS + columnas + COLUMNAS) % COLUMNAS;
+    const totalFilas = tarjetas.length / COLUMNAS;
+    const fila = (Math.floor(seleccion / COLUMNAS) + filas + totalFilas) % totalFilas;
+    seleccion = fila * COLUMNAS + columna;
+  }
+  k.onKeyPress("left", () => mover(-1, 0));
+  k.onKeyPress("right", () => mover(1, 0));
+  k.onKeyPress("up", () => mover(0, -1));
+  k.onKeyPress("down", () => mover(0, 1));
+  k.onKeyPress(["space", "enter"], () => {
+    usaTeclado = true;
+    voltear(tarjetas[seleccion]);
+  });
+
+  // --- Marcador y marco de selección ---
+  const posMovs = k.vec2(14, 12);
+  const posParejas = k.vec2(250, 12);
+  const colorMarco = COLOR_DORADO;
+  k.add([
+    k.z(100),
+    {
+      draw() {
+        k.drawText({ text: "Movimientos: " + movimientos, pos: posMovs, size: 16, color: COLOR_TEXTO });
+        k.drawText({ text: "Parejas: " + parejas + "/" + PAREJAS_MEMORAMA, pos: posParejas, size: 16, color: COLOR_TEXTO });
+        if (usaTeclado && tarjetas[seleccion].exists()) {
+          const t = tarjetas[seleccion];
+          k.drawRect({
+            pos: t.pos, width: 82, height: 90, anchor: "center", radius: 10,
+            fill: false, outline: { width: 3, color: colorMarco },
+          });
+        }
+      },
+    },
+  ]);
+  crearBoton("Salir (0)", 430, 336, 90, () => k.go("minijuegos"));
+
+  function terminar() {
+    // Quitamos las tarjetas y el marco para que el panel se vea limpio
+    usaTeclado = false;
+    for (const t of tarjetas) t.destroy();
+    const nuevoRecord = datosJuego.mejorMemorama === 0 || movimientos < datosJuego.mejorMemorama;
+    if (nuevoRecord) datosJuego.mejorMemorama = movimientos;
+    premiarMinijuego({
+      titulo: "¡Encontraste todas!",
+      resultado: "Lo lograste en " + movimientos + " movimientos",
+      monedas: monedasMemorama(movimientos),
+      nuevoRecord,
+    });
+  }
+
+  k.onKeyPress("0", () => k.go("minijuegos"));
+  k.onKeyPress("escape", () => k.go("minijuegos"));
+});
+
+// ===== 8e. MENÚ DE MINIJUEGOS =====
+// Cada minijuego es una "ficha". Para agregar uno nuevo: haz su escena
+// y agrega su ficha aquí (aparece solito en el menú).
+const MINIJUEGOS = [
+  {
+    escena: "jugar", nombre: "Atrapa la comida", icono: "lombriz",
+    descripcion: "Atrapa gusanos y esquiva la basura",
+    record: () => "Récord: " + datosJuego.mejorMinijuego + " bocados",
+  },
+  {
+    escena: "limpiar", nombre: "Limpia el canal", icono: "basura",
+    descripcion: "Saca la basura, ¡no toques al ajolotito!",
+    record: () => "Récord: " + datosJuego.mejorLimpia + " basuras",
+  },
+  {
+    escena: "memorama", nombre: "Memorama", icono: "corazon",
+    descripcion: "Encuentra las parejas con pocos movimientos",
+    record: () => datosJuego.mejorMemorama ? "Récord: " + datosJuego.mejorMemorama + " movs." : "Sin récord",
+  },
+];
+
+k.scene("minijuegos", () => {
+  k.add([k.text("MINIJUEGOS", { size: 30 }), k.pos(240, 26), k.anchor("center"), k.color(COLOR_DORADO)]);
+  k.add([
+    k.text("Jugar sube el ánimo (+" + ANIMO_POR_JUGAR + ") pero da hambre (-" + COMIDA_QUE_GASTA_JUGAR + ")", { size: 12 }),
+    k.pos(240, 54),
+    k.anchor("center"),
+  ]);
+  const textoMensaje = k.add([k.text("", { size: 14 }), k.pos(240, 300), k.anchor("center"), k.color(255, 150, 150), k.timer()]);
+
+  function elegir(minijuego) {
+    // Jugar da hambre: si tiene mucha hambre, primero que coma
+    if (datosJuego.alimentado < COMIDA_PARA_JUGAR) {
+      textoMensaje.text = "Tu ajolote tiene hambre. ¡Primero dale de comer!";
+      textoMensaje.wait(2.5, () => { textoMensaje.text = ""; });
+      return;
+    }
+    k.go(minijuego.escena);
+  }
+
+  MINIJUEGOS.forEach((minijuego, i) => {
+    const tarjeta = k.add([
+      k.rect(146, 200, { radius: 12 }),
+      k.pos(85 + i * 155, 175),
+      k.anchor("center"),
+      k.color(40, 60, 90),
+      k.outline(3, k.rgb(120, 160, 210)),
+      k.area(),
+    ]);
+    tarjeta.add([k.text(String(i + 1), { size: 14 }), k.pos(-56, -84), k.anchor("center"), k.color(120, 160, 210)]);
+    tarjeta.add([k.sprite(minijuego.icono), k.pos(0, -52), k.anchor("center"), k.scale(4)]);
+    tarjeta.add([k.text(minijuego.nombre, { size: 15, width: 132, align: "center" }), k.pos(0, -6), k.anchor("center")]);
+    tarjeta.add([k.text(minijuego.descripcion, { size: 11, width: 128, align: "center" }), k.pos(0, 34), k.anchor("center"), k.color(190, 205, 225)]);
+    tarjeta.add([k.text(minijuego.record(), { size: 11 }), k.pos(0, 78), k.anchor("center"), k.color(COLOR_DORADO)]);
+    tarjeta.onClick(() => elegir(minijuego));
+    tarjeta.onHover(() => { tarjeta.color = k.rgb(55, 85, 125); });
+    tarjeta.onHoverEnd(() => { tarjeta.color = k.rgb(40, 60, 90); });
+    k.onKeyPress(String(i + 1), () => elegir(minijuego));
+  });
+
+  crearBoton("Volver (0)", 240, 336, 160, () => k.go("acuario"));
   k.onKeyPress("0", () => k.go("acuario"));
   k.onKeyPress("escape", () => k.go("acuario"));
 });
 
-// ===== 8c. ESCENA DE LOGROS =====
+// ===== 8f. ESCENA DE LOGROS =====
 k.scene("logros", () => {
   const ganados = datosJuego.logros.length;
   k.add([k.text("LOGROS", { size: 26 }), k.pos(240, 20), k.anchor("center"), k.color(COLOR_DORADO)]);
@@ -1487,21 +1891,21 @@ k.scene("logros", () => {
     const columna = numero % 2;
     const fila = Math.floor(numero / 2);
     const tarjeta = k.add([
-      k.rect(226, 32, { radius: 6 }),
-      k.pos(10 + columna * 234, 60 + fila * 36),
+      k.rect(226, 29, { radius: 6 }),
+      k.pos(10 + columna * 234, 56 + fila * 33),
       k.color(ganado ? k.rgb(60, 45, 20) : k.rgb(40, 48, 66)),
       k.outline(2, ganado ? COLOR_DORADO : k.rgb(70, 80, 100)),
     ]);
     tarjeta.add([
       k.sprite("trofeo"),
-      k.pos(16, 16),
+      k.pos(16, 14),
       k.anchor("center"),
       k.scale(2),
       // color() multiplica el dibujo: gris oscuro = trofeo "apagado"
       k.color(ganado ? k.rgb(255, 255, 255) : k.rgb(70, 70, 80)),
     ]);
-    tarjeta.add([k.text(logro.nombre, { size: 12 }), k.pos(34, 4), k.color(ganado ? COLOR_DORADO : k.rgb(150, 160, 180))]);
-    tarjeta.add([k.text(logro.descripcion, { size: 9 }), k.pos(34, 19), k.color(ganado ? COLOR_TEXTO : k.rgb(120, 130, 150))]);
+    tarjeta.add([k.text(logro.nombre, { size: 12 }), k.pos(34, 3), k.color(ganado ? COLOR_DORADO : k.rgb(150, 160, 180))]);
+    tarjeta.add([k.text(logro.descripcion, { size: 9 }), k.pos(34, 17), k.color(ganado ? COLOR_TEXTO : k.rgb(120, 130, 150))]);
   });
 
   crearBoton("Volver (0)", 240, 336, 160, () => k.go("acuario"));
