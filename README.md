@@ -53,10 +53,19 @@ Al comer suena un audio de 1.5 s y la comida se va achicando en
 7 mordidas, al ritmo del sonido. Los tiempos de cada mordida están en
 `MORDIDAS` en `main.js`: si cambias el audio, cámbialos también.
 
-El audio va **dentro de `main.js`** (función `sonidoComerDatos()`, al final),
-así que basta copiar `main.js` para que suene, también en KAPLAYGROUND.
-El archivo original está en `sonidos/comer.mp3`. Si el navegador no puede
-leer el audio, el juego sigue funcionando sin sonido.
+## Sonidos
+
+Los audios van **dentro de `main.js`** (funciones `sonidoComerDatos()` y
+`sonidoClickDatos()`, al final), así que basta copiar `main.js` para que suenen,
+también en KAPLAYGROUND. Los originales están en `sonidos/`.
+Si el navegador no puede leer un audio, el juego sigue funcionando sin él.
+
+- `comer.mp3`: al comer (1.5 s, 7 mordidas).
+- `click.wav`: "pop" de burbuja en botones y tarjetas. Lo generamos con código,
+  así que no tiene licencia de nadie más.
+
+Para agregar otro: pon su audio al final de `main.js` en una función como
+`sonidoClickDatos()`, cárgalo con `cargarSonido("nombre", ...)` y tócalo con `sonar("nombre")`.
 
 ## El tiempo pasa aunque no juegues
 
